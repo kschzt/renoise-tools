@@ -79,6 +79,21 @@ function GenQ:__init()
   renoise.tool().app_idle_observable:add_notifier(function()
     self:check_for_trigger()
   end)
+
+  -- Add properties for musical context
+  self.prev_note = nil
+  self.pattern_index = 1
+  self.pattern_types = {
+    "random", -- keep the basic random as fallback
+    "jazz_walk", -- chromatic approach notes, target notes from scale
+    "modal_drift", -- emphasize certain scale degrees, drift between modes
+    "tension_release", -- build tension with wider intervals then resolve
+    "call_response", -- alternate between question/answer phrases
+    "rhythmic_cycle", -- based on polyrhythmic cycles (3,4,5,7)
+    "motivic", -- develop short motifs with variations
+    "harmonic_series" -- use harmonic series relationships
+  }
+  self.current_pattern = "random"
 end
 
 function GenQ:process_pattern()
@@ -203,6 +218,17 @@ function GenQ:show_gui()
           self.trigger_instrument = value
         end
       }
+    },
+    vb:row {
+      vb:text { text = "Pattern Type:" },
+      vb:popup {
+        items = self.pattern_types,
+        value = table.find(self.pattern_types, self.current_pattern) or 1,
+        notifier = function(index)
+          self.current_pattern = self.pattern_types[index]
+          self.prev_note = nil  -- Reset context when changing patterns
+        end
+      }
     }
   }
 
@@ -242,14 +268,30 @@ function GenQ:check_for_trigger()
   local pattern_index = song.sequencer:pattern(pos.sequence)
   local pattern = song.patterns[pattern_index]
   
-  -- Process all tracks
+  -- Look ahead one line
+  local next_line = pos.line + 1
+  local next_sequence = pos.sequence
+  
+  -- Handle pattern boundary
+  if next_line > pattern.number_of_lines then
+    next_line = 1
+    next_sequence = pos.sequence + 1
+    -- Wrap around sequence
+    if next_sequence > #song.sequencer.pattern_sequence then
+      next_sequence = 1
+    end
+    pattern_index = song.sequencer:pattern(next_sequence)
+    pattern = song.patterns[pattern_index]
+  end
+  
+  -- Process all tracks for the next line
   for track_index = 1, #pattern.tracks do
     local track = song.tracks[track_index]
     local pattern_track = pattern.tracks[track_index]
 
     -- Only process note tracks
     if track.type == renoise.Track.TRACK_TYPE_SEQUENCER then 
-      local line = pattern_track:line(pos.line)
+      local line = pattern_track:line(next_line)  -- Look at next line
       
       -- Check each note column for notes in octave 0
       for column_index = 1, track.visible_note_columns do
@@ -271,19 +313,17 @@ function GenQ:check_for_trigger()
             
             -- Only process actual notes (not empty or OFF)
             if next_column and next_column.note_value > 0 and next_column.note_value < 120 then
-              -- Generate random note in selected scale
-              local scale = self.scales[scale_name]  -- Use scale from volume
+              local scale = self.scales[scale_name]
               local note_min, note_max = self.note_range[1], self.note_range[2]
               
-              -- Get random scale degree and octave
-              local scale_note = scale[math.random(#scale)]
-              local octave = math.random(math.floor(note_min/12), math.floor(note_max/12)) * 12
-              local new_note = scale_note + octave + root_note  -- Add root note offset
+              -- Use improved note generation
+              local scale_note = self:generate_note(scale, root_note, line_index)
+              local octave = self:get_octave(note_min, note_max)
+              local new_note = scale_note + octave + root_note
               
               -- Keep within range
               new_note = math.min(math.max(new_note, note_min), note_max)
               
-              -- Update the note
               next_column.note_value = new_note
             end
           end
@@ -291,6 +331,216 @@ function GenQ:check_for_trigger()
       end
     end
   end
+end
+
+-- Improved note generation with musical context
+function GenQ:generate_note(scale, root_note, line_index)
+  local pattern_funcs = {
+    jazz_walk = function()
+      if not self.prev_note then
+        self.prev_note = scale[math.random(#scale)]
+        self.direction = math.random() > 0.5 and 1 or -1
+      else
+        -- Sometimes use chromatic approach notes
+        if math.random() < 0.3 then
+          self.prev_note = self.prev_note + self.direction
+          self.direction = -self.direction -- Change direction after approach
+        else
+          -- Target next scale note
+          local current_pos = table.find(scale, self.prev_note % 12)
+          local target_pos = current_pos + self.direction
+          if target_pos > #scale then target_pos = 1
+          elseif target_pos < 1 then target_pos = #scale end
+          self.prev_note = scale[target_pos]
+        end
+      end
+      return self.prev_note
+    end,
+
+    modal_drift = function()
+      if not self.modal_state then
+        self.modal_state = {
+          strong_degrees = {1, 3, 5}, -- Start with triad degrees
+          current_degree = 1,
+          drift_counter = 0
+        }
+      end
+      
+      -- Occasionally change the emphasized degrees
+      self.modal_state.drift_counter = self.modal_state.drift_counter + 1
+      if self.modal_state.drift_counter > 8 then
+        self.modal_state.drift_counter = 0
+        -- Change one of the strong degrees
+        local idx = math.random(#self.modal_state.strong_degrees)
+        self.modal_state.strong_degrees[idx] = math.random(#scale)
+      end
+
+      -- Higher chance to use strong degrees
+      if math.random() < 0.7 then
+        self.prev_note = scale[self.modal_state.strong_degrees[math.random(#self.modal_state.strong_degrees)]]
+      else
+        self.prev_note = scale[math.random(#scale)]
+      end
+      return self.prev_note
+    end,
+
+    tension_release = function()
+      if not self.tension_state then
+        self.tension_state = {
+          tension = 0, -- 0 to 1
+          phrase_pos = 0
+        }
+      end
+      
+      self.tension_state.phrase_pos = self.tension_state.phrase_pos + 1
+      if self.tension_state.phrase_pos > 8 then
+        self.tension_state.phrase_pos = 1
+        self.tension_state.tension = 0
+      end
+      
+      -- Build tension through the phrase
+      self.tension_state.tension = self.tension_state.tension + 0.125
+      
+      -- Higher tension = wider intervals and more dissonant notes
+      if self.tension_state.tension > 0.7 then
+        -- Use more dissonant intervals
+        local intervals = {1, 6, 8, 10}
+        self.prev_note = scale[intervals[math.random(#intervals)]]
+      elseif self.tension_state.tension > 0.4 then
+        -- Use wider consonant intervals
+        local intervals = {2, 5, 7}
+        self.prev_note = scale[intervals[math.random(#intervals)]]
+      else
+        -- Resolution - use stable intervals
+        local intervals = {1, 3, 5}
+        self.prev_note = scale[intervals[math.random(#intervals)]]
+      end
+      return self.prev_note
+    end,
+
+    melodic_contour = function()
+      if not self.contour_state then
+        self.contour_state = {
+          direction = 1,
+          step_size = 1,
+          phrase_length = math.random(4, 8),
+          position = 0,
+          target_note = nil
+        }
+      end
+      
+      self.contour_state.position = (self.contour_state.position + 1) % self.contour_state.phrase_length
+      
+      if self.contour_state.position == 0 then
+        -- Start new phrase
+        self.contour_state.direction = math.random() > 0.5 and 1 or -1
+        self.contour_state.step_size = math.random(1, 3)
+        self.contour_state.phrase_length = math.random(4, 8)
+        -- Pick target note from scale
+        self.contour_state.target_note = scale[math.random(#scale)]
+      end
+      
+      if not self.prev_note then
+        self.prev_note = scale[math.random(#scale)]
+      else
+        -- Move towards target note
+        local current_pos = table.find(scale, self.prev_note % 12)
+        local target_pos = table.find(scale, self.contour_state.target_note)
+        local step = current_pos < target_pos and 1 or -1
+        current_pos = current_pos + step * self.contour_state.step_size
+        
+        -- Wrap around scale
+        while current_pos > #scale do current_pos = current_pos - #scale end
+        while current_pos < 1 do current_pos = current_pos + #scale end
+        
+        self.prev_note = scale[current_pos]
+      end
+      
+      return self.prev_note
+    end,
+
+    phrase_based = function()
+      if not self.phrase_state then
+        self.phrase_state = {
+          phrase = {},
+          position = 0,
+          variation = 0
+        }
+        -- Generate initial phrase
+        for i = 1, 4 do
+          self.phrase_state.phrase[i] = scale[math.random(#scale)]
+        end
+      end
+      
+      self.phrase_state.position = (self.phrase_state.position + 1) % 4
+      
+      if self.phrase_state.position == 0 then
+        -- Vary the phrase slightly
+        self.phrase_state.variation = (self.phrase_state.variation + 1) % 3
+        if self.phrase_state.variation == 0 then
+          -- Modify one note in the phrase
+          local idx = math.random(4)
+          local current = table.find(scale, self.phrase_state.phrase[idx])
+          local step = math.random(-2, 2)
+          current = ((current + step - 1) % #scale) + 1
+          self.phrase_state.phrase[idx] = scale[current]
+        end
+      end
+      
+      return self.phrase_state.phrase[self.phrase_state.position + 1]
+    end
+  }
+
+  -- Use pattern function if it exists, otherwise use random selection
+  if pattern_funcs[self.current_pattern] then
+    return pattern_funcs[self.current_pattern](line_index)
+  else
+    -- Default random behavior
+    if not self.prev_note then
+      self.prev_note = scale[math.random(#scale)]
+    else
+      -- Prefer notes closer to previous note
+      local nearby_notes = {}
+      for _, note in ipairs(scale) do
+        if math.abs(note - self.prev_note) <= 4 then  -- within a third
+          table.insert(nearby_notes, note)
+        end
+      end
+      self.prev_note = #nearby_notes > 0 
+        and nearby_notes[math.random(#nearby_notes)] 
+        or scale[math.random(#scale)]
+    end
+    return self.prev_note
+  end
+end
+
+-- Weighted octave selection
+function GenQ:get_octave(note_min, note_max)
+  local min_oct = math.floor(note_min/12)
+  local max_oct = math.floor(note_max/12)
+  local mid_oct = math.floor((min_oct + max_oct) / 2)
+  
+  -- Much stronger weighting towards middle octaves
+  local weights = {}
+  for oct = min_oct, max_oct do
+    -- Exponential falloff from middle octave
+    local distance = math.abs(oct - mid_oct)
+    weights[oct] = math.exp(-distance * 0.8)  -- Steeper falloff
+  end
+  
+  -- Add extra weight to middle octave
+  weights[mid_oct] = weights[mid_oct] * 2
+  
+  -- Weighted random selection
+  local total = 0
+  for _, w in pairs(weights) do total = total + w end
+  local r = math.random() * total
+  
+  for oct, w in pairs(weights) do
+    r = r - w
+    if r <= 0 then return oct * 12 end
+  end
+  return mid_oct * 12
 end
 
 -- Create a single instance of the tool
