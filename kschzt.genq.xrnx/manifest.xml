@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <Name>Random Note Generator and Quantizer</Name>
+  <Id>com.kschzt.genq</Id>
+  <Version>1.0</Version>
+  <ApiVersion>6.1</ApiVersion>
+  <Author>kschzt</Author>
+  <Description>Generates random notes and quantizes them to musical scales. Place a note in octave 0 (C-0 to B-0) to trigger randomization in the next column. The trigger note's pitch sets the root note for the scale.</Description>
+  <Category>Pattern Editor</Category>
+  <Classes>
+    <Class name="GenQ"/>
+  </Classes>
+  <RequiredApplicationVersion>3.4</RequiredApplicationVersion>
+</RenoiseScriptingTool> 
