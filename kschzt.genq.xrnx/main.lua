@@ -1,8 +1,18 @@
--- Random Note Generator and Quantizer for Renoise
+-- Add at the very top of the file, after _AUTO_RELOAD_DEBUG = true
 _AUTO_RELOAD_DEBUG = true
 
--- Declare global tool instance
+-- Declare global variables
 _tool_instance = nil
+local options = renoise.Document.create("GenQSettings") {
+  selected_scale = "major",
+  note_range_min = 24,
+  note_range_max = 84,
+  trigger_instrument = 1,
+  current_pattern = "random"
+}
+
+-- Save preferences when they change
+renoise.tool().preferences = options
 
 class 'GenQ'
 
@@ -58,12 +68,15 @@ function GenQ:__init()
   }
 
   -- Initialize properties
-  self.selected_scale = "major"
-  self.note_range = {24, 84}  -- Default range C2-B6
+  self.selected_scale = options.selected_scale.value
+  self.note_range = {
+    options.note_range_min.value,
+    options.note_range_max.value
+  }
   self.active = false -- Toggles real-time processing
 
   -- Add trigger instrument property
-  self.trigger_instrument = 1  -- Default to instrument 01
+  self.trigger_instrument = options.trigger_instrument.value
 
   -- Add menu entries
   renoise.tool():add_menu_entry {
@@ -84,16 +97,27 @@ function GenQ:__init()
   self.prev_note = nil
   self.pattern_index = 1
   self.pattern_types = {
-    "random", -- keep the basic random as fallback
-    "jazz_walk", -- chromatic approach notes, target notes from scale
-    "modal_drift", -- emphasize certain scale degrees, drift between modes
-    "tension_release", -- build tension with wider intervals then resolve
-    "call_response", -- alternate between question/answer phrases
-    "rhythmic_cycle", -- based on polyrhythmic cycles (3,4,5,7)
-    "motivic", -- develop short motifs with variations
-    "harmonic_series" -- use harmonic series relationships
+    "random",
+    "jazz_walk", 
+    "modal_drift",
+    "tension_release",
+    "melodic_contour",
+    "phrase_based",
+    "markov",
+    "euclidean",
+    "melodic_sequence",
+    "melodic_development",
+    "melodic_phrase",
+    "rhythmic_phrase"
   }
-  self.current_pattern = "random"
+  self.current_pattern = options.current_pattern.value
+
+  -- Add pattern memory
+  self.pattern_memory = {
+    last_patterns = {},    -- Store last N patterns
+    common_motifs = {},    -- Store recurring motifs
+    max_memory = 16       -- How many patterns to remember
+  }
 end
 
 function GenQ:process_pattern()
@@ -186,6 +210,7 @@ function GenQ:show_gui()
         value = table.find(scale_map, self.selected_scale) or 1,
         notifier = function(index)
           self.selected_scale = scale_map[index]
+          options.selected_scale.value = self.selected_scale
         end
       }
     },
@@ -197,6 +222,7 @@ function GenQ:show_gui()
         value = self.note_range[1],
         notifier = function(value)
           self.note_range[1] = value
+          options.note_range_min.value = value
         end
       },
       vb:valuebox {
@@ -205,6 +231,7 @@ function GenQ:show_gui()
         value = self.note_range[2],
         notifier = function(value)
           self.note_range[2] = value
+          options.note_range_max.value = value
         end
       }
     },
@@ -216,6 +243,7 @@ function GenQ:show_gui()
         value = self.trigger_instrument,
         notifier = function(value)
           self.trigger_instrument = value
+          options.trigger_instrument.value = value
         end
       }
     },
@@ -226,7 +254,8 @@ function GenQ:show_gui()
         value = table.find(self.pattern_types, self.current_pattern) or 1,
         notifier = function(index)
           self.current_pattern = self.pattern_types[index]
-          self.prev_note = nil  -- Reset context when changing patterns
+          options.current_pattern.value = self.current_pattern
+          self.prev_note = nil
         end
       }
     }
@@ -314,10 +343,20 @@ function GenQ:check_for_trigger()
             -- Only process actual notes (not empty or OFF)
             if next_column and next_column.note_value > 0 and next_column.note_value < 120 then
               local scale = self.scales[scale_name]
+              if not scale then
+                print("Warning: Scale not found:", scale_name)
+                scale = self.scales["major"]  -- Fallback to major scale
+              end
+              
               local note_min, note_max = self.note_range[1], self.note_range[2]
               
-              -- Use improved note generation
+              -- Use improved note generation with error checking
               local scale_note = self:generate_note(scale, root_note, line_index)
+              if not scale_note then
+                print("Warning: No note generated, using random")
+                scale_note = scale[math.random(#scale)]
+              end
+              
               local octave = self:get_octave(note_min, note_max)
               local new_note = scale_note + octave + root_note
               
@@ -340,21 +379,31 @@ function GenQ:generate_note(scale, root_note, line_index)
       if not self.prev_note then
         self.prev_note = scale[math.random(#scale)]
         self.direction = math.random() > 0.5 and 1 or -1
-      else
-        -- Sometimes use chromatic approach notes
-        if math.random() < 0.3 then
-          self.prev_note = self.prev_note + self.direction
-          self.direction = -self.direction -- Change direction after approach
-        else
-          -- Target next scale note
-          local current_pos = table.find(scale, self.prev_note % 12)
-          local target_pos = current_pos + self.direction
-          if target_pos > #scale then target_pos = 1
-          elseif target_pos < 1 then target_pos = #scale end
-          self.prev_note = scale[target_pos]
-        end
+        return self.prev_note
       end
-      return self.prev_note
+
+      -- Sometimes use chromatic approach notes
+      if math.random() < 0.3 then
+        self.prev_note = self.prev_note + self.direction
+        self.direction = -self.direction -- Change direction after approach
+        return self.prev_note
+      else
+        -- Target next scale note
+        local current_pos = 1  -- Default to root if not found
+        for i, note in ipairs(scale) do
+          if note == (self.prev_note % 12) then
+            current_pos = i
+            break
+          end
+        end
+        
+        local target_pos = current_pos + self.direction
+        if target_pos > #scale then target_pos = 1
+        elseif target_pos < 1 then target_pos = #scale end
+        
+        self.prev_note = scale[target_pos]
+        return self.prev_note
+      end
     end,
 
     modal_drift = function()
@@ -488,6 +537,261 @@ function GenQ:generate_note(scale, root_note, line_index)
       end
       
       return self.phrase_state.phrase[self.phrase_state.position + 1]
+    end,
+
+    markov = function()
+      if not self.markov_state then
+        -- Initialize with default transitions
+        self.markov_state = {
+          transitions = {
+            -- Default transitions for any position
+            default = {
+              [1] = {[1]=0.1, [3]=0.4, [5]=0.4, [7]=0.1},
+              [2] = {[1]=0.2, [3]=0.4, [4]=0.2, [6]=0.2},
+              [3] = {[2]=0.3, [4]=0.3, [5]=0.2, [6]=0.2},
+              [4] = {[3]=0.3, [5]=0.3, [6]=0.2, [7]=0.2},
+              [5] = {[1]=0.4, [3]=0.3, [7]=0.3},
+              [6] = {[4]=0.2, [5]=0.6, [7]=0.2},
+              [7] = {[1]=0.5, [3]=0.3, [5]=0.2}
+            }
+          },
+          current_degree = 1,
+          phrase_pos = 0,
+          phrase_length = 8
+        }
+      end
+
+      -- Update phrase position
+      self.markov_state.phrase_pos = (self.markov_state.phrase_pos + 1) % self.markov_state.phrase_length
+      
+      -- Use default transitions
+      local transitions = self.markov_state.transitions.default
+      
+      -- Select next note based on transitions
+      local current_transitions = transitions[self.markov_state.current_degree]
+      if not current_transitions then
+        self.markov_state.current_degree = 1
+        current_transitions = transitions[1]
+      end
+
+      -- Calculate next degree using transition probabilities
+      local r = math.random()
+      local sum = 0
+      for next_degree, prob in pairs(current_transitions) do
+        sum = sum + prob
+        if r <= sum then
+          self.markov_state.current_degree = next_degree
+          break
+        end
+      end
+
+      return scale[self.markov_state.current_degree]
+    end,
+
+    euclidean = function()
+      if not self.euclidean_state then
+        self.euclidean_state = {
+          steps = 8,           -- Total steps in pattern
+          pulses = 3,          -- Number of active pulses
+          position = 0,        -- Current position
+          pattern = {},        -- Will hold the euclidean pattern
+          scale_positions = {} -- Will hold scale degrees for active pulses
+        }
+        
+        -- Generate Euclidean pattern
+        local pattern = {}
+        local bucket = 0
+        for i = 1, self.euclidean_state.steps do
+          bucket = bucket + self.euclidean_state.pulses
+          if bucket >= self.euclidean_state.steps then
+            bucket = bucket - self.euclidean_state.steps
+            pattern[i] = true
+          else
+            pattern[i] = false
+          end
+        end
+        self.euclidean_state.pattern = pattern
+        
+        -- Assign scale degrees to active pulses
+        local pulse_count = 0
+        for i = 1, #pattern do
+          if pattern[i] then
+            pulse_count = pulse_count + 1
+            -- Use different scale degrees for each pulse
+            self.euclidean_state.scale_positions[i] = 
+              math.floor(pulse_count * #scale / self.euclidean_state.pulses)
+          end
+        end
+      end
+      
+      -- Advance position
+      self.euclidean_state.position = 
+        (self.euclidean_state.position + 1) % self.euclidean_state.steps
+      
+      -- Return note based on current position
+      if self.euclidean_state.pattern[self.euclidean_state.position + 1] then
+        local scale_pos = self.euclidean_state.scale_positions[self.euclidean_state.position + 1]
+        return scale[scale_pos]
+      else
+        -- For non-active positions, return previous note or random note
+        return self.prev_note or scale[math.random(#scale)]
+      end
+    end,
+
+    melodic_phrase = function()
+      if not self.phrase_state then
+        self.phrase_state = {
+          length = math.random(4, 8),
+          position = 0,
+          notes = {},
+          direction = 1,
+          pattern = {1, 2, 0, 1, 2, 1, 0, 2}  -- Add rhythm pattern
+        }
+        -- Generate initial phrase
+        local current = math.random(#scale)
+        for i = 1, self.phrase_state.length do
+          self.phrase_state.notes[i] = scale[current]
+          -- Move stepwise with occasional leaps
+          if math.random() < 0.2 then
+            current = math.random(#scale)  -- Leap
+          else
+            current = ((current + self.phrase_state.direction - 1) % #scale) + 1  -- Step
+            if math.random() < 0.3 then
+              self.phrase_state.direction = -self.phrase_state.direction  -- Change direction
+            end
+          end
+        end
+      end
+      
+      self.phrase_state.position = (self.phrase_state.position + 1) % 8
+      local strength = self.phrase_state.pattern[self.phrase_state.position + 1]
+      
+      if strength == 1 then
+        return scale[math.random(#scale)]  -- Strong beat - any note
+      elseif strength == 2 then
+        -- Medium beat - stay close to previous
+        local current = table.find(scale, self.prev_note % 12)
+        local step = math.random(-2, 2)
+        return scale[((current + step - 1) % #scale) + 1]
+      else
+        -- Weak beat - use base note or nearby
+        return self.phrase_state.base_note
+      end
+    end,
+
+    rhythmic_phrase = function()
+      if not self.rhythm_state then
+        self.rhythm_state = {
+          pattern = {1, 0, 2, 0, 1, 2, 0, 1},  -- 1 = accent, 2 = normal, 0 = quiet
+          position = 0,
+          base_note = scale[math.random(#scale)]
+        }
+      end
+      
+      self.rhythm_state.position = (self.rhythm_state.position + 1) % 8
+      local strength = self.rhythm_state.pattern[self.rhythm_state.position + 1]
+      
+      if strength == 1 then
+        return scale[math.random(#scale)]  -- Strong beat - any note
+      elseif strength == 2 then
+        -- Medium beat - stay close to previous
+        local current = table.find(scale, self.prev_note % 12)
+        local step = math.random(-2, 2)
+        return scale[((current + step - 1) % #scale) + 1]
+      else
+        -- Weak beat - use base note or nearby
+        return self.rhythm_state.base_note
+      end
+    end,
+
+    melodic_development = function()
+      if not self.development_state then
+        self.development_state = {
+          motif = {},
+          variations = {},
+          current_variation = 1,
+          position = 0,
+          -- Transformation types
+          transforms = {
+            'original',
+            'retrograde',
+            'inversion',
+            'retrograde_inversion',
+            'augmentation',
+            'diminution'
+          }
+        }
+        
+        -- Generate initial motif
+        for i = 1, 4 do
+          self.development_state.motif[i] = scale[math.random(#scale)]
+        end
+        
+        -- Generate variations
+        for _, transform in ipairs(self.development_state.transforms) do
+          local variation = {}
+          if transform == 'retrograde' then
+            for i = 1, 4 do
+              variation[i] = self.development_state.motif[5-i]
+            end
+          elseif transform == 'inversion' then
+            for i = 1, 4 do
+              local interval = self.development_state.motif[i] - self.development_state.motif[1]
+              variation[i] = self.development_state.motif[1] - interval
+            end
+          -- Add other transformations...
+          end
+          table.insert(self.development_state.variations, variation)
+        end
+      end
+      
+      -- Use variations in sequence
+      local current_var = self.development_state.variations[self.development_state.current_variation]
+      local note = current_var[self.development_state.position + 1]
+      
+      -- Update positions
+      self.development_state.position = (self.development_state.position + 1) % 4
+      if self.development_state.position == 0 then
+        self.development_state.current_variation = 
+          (self.development_state.current_variation % #self.development_state.variations) + 1
+      end
+      
+      return note
+    end,
+
+    melodic_sequence = function()
+      if not self.sequence_state then
+        self.sequence_state = {
+          sequence = {},
+          position = 0,
+          length = 4,
+          transpositions = {0, 2, -1, 1}  -- Sequence variations
+        }
+        -- Generate initial sequence
+        for i = 1, self.sequence_state.length do
+          self.sequence_state.sequence[i] = scale[math.random(#scale)]
+        end
+      end
+      
+      local base_note = self.sequence_state.sequence[self.sequence_state.position + 1]
+      local transpose = self.sequence_state.transpositions[math.floor(line_index / 4) % 4 + 1]
+      self.sequence_state.position = (self.sequence_state.position + 1) % self.sequence_state.length
+      
+      return base_note + transpose
+    end,
+
+    adaptive = function()
+      if not self.adaptive_state then
+        self.adaptive_state = {
+          motif_length = math.random(2, 4),
+          variations = 0,
+          last_motif = {},
+          tension = 0
+        }
+        -- Learn from existing patterns
+        self.adaptive_state.motif = self:analyze_pattern(current_pattern)
+      end
+      -- Generate variations based on analysis
     end
   }
 
@@ -520,16 +824,20 @@ function GenQ:get_octave(note_min, note_max)
   local max_oct = math.floor(note_max/12)
   local mid_oct = math.floor((min_oct + max_oct) / 2)
   
-  -- Much stronger weighting towards middle octaves
+  -- Even stronger weighting towards middle octaves
   local weights = {}
   for oct = min_oct, max_oct do
-    -- Exponential falloff from middle octave
+    -- Steeper exponential falloff
     local distance = math.abs(oct - mid_oct)
-    weights[oct] = math.exp(-distance * 0.8)  -- Steeper falloff
+    weights[oct] = math.exp(-distance * 1.2)  -- Increased from 0.8 to 1.2
   end
   
-  -- Add extra weight to middle octave
-  weights[mid_oct] = weights[mid_oct] * 2
+  -- Even more weight to middle octave
+  weights[mid_oct] = weights[mid_oct] * 3  -- Increased from 2 to 3
+  
+  -- Add weight to adjacent octaves
+  if weights[mid_oct - 1] then weights[mid_oct - 1] = weights[mid_oct - 1] * 1.5 end
+  if weights[mid_oct + 1] then weights[mid_oct + 1] = weights[mid_oct + 1] * 1.5 end
   
   -- Weighted random selection
   local total = 0
@@ -541,6 +849,32 @@ function GenQ:get_octave(note_min, note_max)
     if r <= 0 then return oct * 12 end
   end
   return mid_oct * 12
+end
+
+function GenQ:analyze_pattern(pattern)
+  local analysis = {
+    intervals = {},      -- Common intervals used
+    rhythmic_density = 0, -- Notes per line
+    range = {min = 127, max = 0},
+    common_sequences = {}
+  }
+  -- Analyze existing pattern to inform generation
+  return analysis
+end
+
+function GenQ:get_phrase_position(line_index)
+  -- Track where we are in musical phrases
+  local phrase_length = 8
+  local position = line_index % phrase_length
+  local is_phrase_start = position == 0
+  local is_phrase_end = position == phrase_length - 1
+  
+  return {
+    position = position,
+    strength = is_phrase_start and 3 or (position % 2 == 0 and 2 or 1),
+    is_start = is_phrase_start,
+    is_end = is_phrase_end
+  }
 end
 
 -- Create a single instance of the tool

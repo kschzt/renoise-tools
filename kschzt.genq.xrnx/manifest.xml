@@ -5,7 +5,7 @@
   <Version>1.0</Version>
   <ApiVersion>6.1</ApiVersion>
   <Author>kschzt</Author>
-  <Description>Generates random notes and quantizes them to musical scales. Place a note in octave 0 (C-0 to B-0) to trigger randomization in the next column. The trigger note's pitch sets the root note for the scale.</Description>
+  <Description>Generates random notes and quantizes them to musical scales. Place a note in octave 0 (C-0 to B-0) to trigger randomization in the next column. The trigger note's pitch sets the root note for the scale. Multiple pattern generators available including markov chains, euclidean rhythms, and melodic patterns.</Description>
   <Category>Pattern Editor</Category>
   <Classes>
     <Class name="GenQ"/>
