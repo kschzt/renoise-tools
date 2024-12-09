@@ -14,15 +14,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Step 2: Package each .xrnx folder
+      # Step 2: Package specific .xrnx files manually
       - name: Package XRNX Files
         run: |
           mkdir -p xrnx_packages
-          find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
-            xrnx_name=$(basename "$xrnx_dir")
-            echo "Zipping $xrnx_name..."
-            (cd "$xrnx_dir" && zip -r "../xrnx_packages/$xrnx_name" .)
-          done
+          # Manually specify files to package
+          (cd kschzt.genq.xrnx && zip -r ../xrnx_packages/kschzt.genq.xrnx .)
+          (cd kschzt.test.xrnx && zip -r ../xrnx_packages/kschzt.test.xrnx .)
           ls -l xrnx_packages/
 
       # Step 3: Generate a tag name
@@ -52,7 +50,7 @@ jobs:
           draft: false
           prerelease: false
 
-      # Step 6: Upload each .xrnx file to the release
+      # Step 6: Upload specific .xrnx files to the release
       - name: Upload XRNX Files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
