@@ -20,8 +20,8 @@ jobs:
           # Loop through each folder ending in .xrnx
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            # Zip the contents of the folder into a .xrnx file
-            zip -r "$xrnx_name" "$xrnx_dir"/*
+            # Zip the contents of the folder into a .xrnx file, including hidden files
+            (cd "$xrnx_dir" && zip -r "../$xrnx_name" .)
           done
 
       # Step 3: Generate a tag name
