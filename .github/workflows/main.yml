@@ -17,14 +17,16 @@ jobs:
       # Step 2: Package each .xrnx folder
       - name: Package XRNX Files
         run: |
-          # Find all directories ending with .xrnx
+          # Create a temporary folder for the .xrnx files
+          mkdir -p xrnx_packages
+          # Loop through all directories ending in .xrnx
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
             # Zip the contents of the folder into a .xrnx file
-            zip -r "${xrnx_name}" "${xrnx_dir}"/* || echo "Skipping ${xrnx_name}, no files found"
+            (cd "$xrnx_dir" && zip -r "../xrnx_packages/$xrnx_name" .)
           done
-          # Verify that files are created
-          ls -l *.xrnx
+          # Verify that the .xrnx files are created correctly
+          ls -l xrnx_packages/
 
       # Step 3: Generate a tag name
       - name: Generate Tag Name
@@ -53,12 +55,12 @@ jobs:
           draft: false
           prerelease: false
 
-      # Step 6: Upload each .xrnx file to the release
-      - name: Upload XRNX Files
+      # Step 6: Upload .xrnx files and other assets to the release
+      - name: Upload XRNX Files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for asset_path in *.xrnx; do
+          for asset_path in xrnx_packages/*; do
             asset_name=$(basename "$asset_path")
             echo "Uploading $asset_name"
             curl \
