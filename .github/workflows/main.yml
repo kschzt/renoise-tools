@@ -14,18 +14,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Step 2: Find and package .xrnx directories
+      # Step 2: Package each .xrnx directory
       - name: Package XRNX Files
         run: |
           mkdir -p packaged
-          # Loop through directories ending with .xrnx
+          # Find and package each .xrnx directory
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            # Create a .xrnx file with the contents of the folder (no extra folder layer)
+            # Package only the contents into a .xrnx file
             (cd "$xrnx_dir" && zip -r "../packaged/$xrnx_name" .)
           done
           # List the packaged files for review
-          ls -1 packaged/*.xrnx > packaged_files.txt
+          ls -1 packaged/*.xrnx
 
       # Step 3: Generate a tag name
       - name: Generate Tag Name
@@ -54,12 +54,12 @@ jobs:
           draft: false
           prerelease: false
 
-      # Step 6: Upload XRNX files to release
+      # Step 6: Upload each .xrnx file to the release
       - name: Upload XRNX Files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          while read -r asset_path; do
+          for asset_path in packaged/*.xrnx; do
             asset_name=$(basename "$asset_path")
             echo "Uploading $asset_name"
             curl \
@@ -68,4 +68,4 @@ jobs:
               -H "Content-Type: application/octet-stream" \
               --data-binary @"$asset_path" \
               "${{ steps.create_release.outputs.upload_url }}"?name="$asset_name"
-          done < packaged_files.txt
+          done
