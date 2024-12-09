@@ -1,4 +1,4 @@
-name: XRNX Deploy (1 Folder -> 1 XRNX)
+name: Package One .XRNX Each
 
 on:
   workflow_dispatch:
@@ -13,18 +13,23 @@ jobs:
       # Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v2
-      
-      # Zip the contents of the repo into a uniquely named .xrnx package
-      - name: Zip XRNX Package
+
+      # Create .release.xrnx packages for each .xrnx folder
+      - name: Zip XRNX Packages
         run: |
-          zip -r kschzt.genq.release.xrnx kschzt.genq.xrnx/* \
-            -x "*.git*" "*.github*" \
-            "preferences.xml" 
-      
-      # Dynamically generate a tag name
+          mkdir -p xrnx_packages
+          for xrnx_dir in *.xrnx; do
+            if [ -d "$xrnx_dir" ]; then
+              output_name=$(basename "$xrnx_dir" .xrnx).release.xrnx
+              echo "Zipping $xrnx_dir into $output_name..."
+              zip -r "./xrnx_packages/$output_name" "$xrnx_dir"/*
+            fi
+          done
+
+      # Dynamically generate a tag name in the format yyyy-mm-dd_hh-mm-ss
       - name: Generate Tag Name
-        run: echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
-      
+        run: echo "TAG_NAME=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_ENV
+
       # Create and push a Git tag
       - name: Create and Push Tag
         run: |
@@ -34,7 +39,7 @@ jobs:
           git push origin $TAG_NAME
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       # Create a GitHub release
       - name: Create GitHub Release
         id: create_release
@@ -46,14 +51,17 @@ jobs:
           release_name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
-      
-      # Upload the .xrnx package to the release
-      - name: Upload Release Asset
+
+      # Upload all .release.xrnx packages to the release
+      - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./kschzt.genq.release.xrnx
-          asset_name: kschzt.genq.release.xrnx
-          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for asset_path in xrnx_packages/*.release.xrnx; do
+            asset_name=$(basename "$asset_path")
+            echo "Uploading $asset_name..."
+            gh release upload ${{ env.TAG_NAME }} "$asset_path" --name "$asset_name" --clobber
+          done
