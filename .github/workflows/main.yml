@@ -60,11 +60,11 @@ jobs:
 
       # Upload all .xrnx files to the release
       - name: Upload Release Assets
-        run: |
-          for asset_path in xrnx_packages/*.xrnx; do
-            asset_name=$(basename "$asset_path")
-            echo "Uploading $asset_name..."
-            gh release upload "${{ env.TAG_NAME }}" "$asset_path" --name "$asset_name" --content-type application/octet-stream
-          done
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./xrnx_packages/*.xrnx
+          asset_name: ''
+          asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
