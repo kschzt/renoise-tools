@@ -14,21 +14,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Find and Package .xrnx Directories
+      # Find and package .xrnx directories into .xrnx files
       - name: Package XRNX Files
-        id: package_xrnx
         run: |
           mkdir -p packaged
-          # Loop through all directories ending with .xrnx
+          # Loop through directories ending with .xrnx
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            # Zip the contents of the directory into a .xrnx file
-            zip -r "packaged/$xrnx_name" "$xrnx_dir"/*
+            # Create a .xrnx file with the contents of the folder (no extra folder layer)
+            (cd "$xrnx_dir" && zip -r "../packaged/$xrnx_name" .)
           done
-          # List all packaged files
-          ls -1 packaged/*.xrnx > packaged_files.txt
+          # List the packaged files for review
+          ls -1 packaged > packaged_files.txt
 
-      # Generate a tag name
+      # Generate a tag name based on the current date and time
       - name: Generate Tag Name
         run: |
           echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
@@ -55,7 +54,7 @@ jobs:
           draft: false
           prerelease: false
 
-      # Upload each XRNX file to the release
+      # Upload each packaged .xrnx file to the release
       - name: Upload XRNX Files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,6 +66,6 @@ jobs:
               -X POST \
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Content-Type: application/octet-stream" \
-              --data-binary @"$asset_path" \
+              --data-binary @"packaged/$asset_name" \
               "${{ steps.create_release.outputs.upload_url }}"?name="$asset_name"
           done < packaged_files.txt
