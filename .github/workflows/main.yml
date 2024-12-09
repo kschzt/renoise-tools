@@ -1,7 +1,5 @@
 name: XRNX Deploy (1 Folder -> 1 XRNX)
 
-name: Package and Release XRNX Files
-
 on:
   workflow_dispatch:
   push:
