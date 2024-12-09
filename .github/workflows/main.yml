@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Create .xrnx packages with the updated naming convention
+      # Create .xrnx packages without folder structure
       - name: Zip XRNX Packages
         run: |
           mkdir -p xrnx_packages
@@ -28,7 +28,7 @@ jobs:
                 output_name="com.kschzt.${folder_name}.xrnx"
               fi
               echo "Zipping $xrnx_dir into $output_name..."
-              zip -r "./xrnx_packages/$output_name" "$xrnx_dir"/*
+              (cd "$xrnx_dir" && zip -r "../xrnx_packages/$output_name" .)
             fi
           done
 
