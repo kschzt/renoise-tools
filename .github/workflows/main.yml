@@ -22,10 +22,7 @@ jobs:
           # Find all directories ending with .xrnx and package them
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            zip -r "packaged/$xrnx_name" "$xrnx_dir" \
-              -x "*.git*" "*.github*" \
-              "preferences.xml" \
-              "preferencesDynamicView.xml"
+            zip -r "packaged/$xrnx_name" "$xrnx_dir"/*
           done
           # Save the list of packaged files for later steps
           ls -1 packaged/*.xrnx > packaged_files.txt
