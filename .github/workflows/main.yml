@@ -64,6 +64,6 @@ jobs:
               -X POST \
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Content-Type: application/octet-stream" \
-              --form "file=@$asset_path" \
-              "${{ steps.create_release.outputs.upload_url }}&name=$asset_name"
+              --data-binary @"$asset_path" \
+              "${{ steps.create_release.outputs.upload_url }}?name=$asset_name"
           done
