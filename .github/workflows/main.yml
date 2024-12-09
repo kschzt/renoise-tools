@@ -14,18 +14,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Step 2: Package each .xrnx directory
+      # Step 2: Zip each .xrnx directory into its own .xrnx file
       - name: Package XRNX Files
         run: |
-          mkdir -p packaged
-          # Find and package each .xrnx directory
+          # Loop through each folder ending in .xrnx
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            # Package only the contents into a .xrnx file
-            (cd "$xrnx_dir" && zip -r "../packaged/$xrnx_name" .)
+            # Zip the contents of the folder into a .xrnx file
+            zip -r "$xrnx_name" "$xrnx_dir"/*
           done
-          # List the packaged files for review
-          ls -1 packaged/*.xrnx
 
       # Step 3: Generate a tag name
       - name: Generate Tag Name
@@ -59,7 +56,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for asset_path in packaged/*.xrnx; do
+          for asset_path in *.xrnx; do
             asset_name=$(basename "$asset_path")
             echo "Uploading $asset_name"
             curl \
