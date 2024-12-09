@@ -10,25 +10,21 @@ jobs:
   package-and-release:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout the repository
+      # Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v2
-
-      # Step 2: Package specific .xrnx files manually
-      - name: Package XRNX Files
+      
+      # Zip the contents of the folder into an .xrnx file
+      - name: Zip XRNX Package
         run: |
-          mkdir -p xrnx_packages
-          # Manually specify files to package
-          (cd kschzt.genq.xrnx && zip -r ../xrnx_packages/kschzt.genq.xrnx .)
-          (cd kschzt.test.xrnx && zip -r ../xrnx_packages/kschzt.test.xrnx .)
-          ls -l xrnx_packages/
-
-      # Step 3: Generate a tag name
+          zip -r kschzt.genq.xrnx kschzt.genq.xrnx/*
+      
+      # Dynamically generate a tag name
       - name: Generate Tag Name
         run: |
           echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
-
-      # Step 4: Create and push a tag
+      
+      # Create a tag and push it
       - name: Create and Push Tag
         run: |
           git config --local user.email "action@github.com"
@@ -37,31 +33,22 @@ jobs:
           git push origin $TAG_NAME
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Step 5: Create a GitHub release
+      
+      # Create GitHub release
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG_NAME }}
           release_name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
-
-      # Step 6: Upload specific .xrnx files to the release
-      - name: Upload XRNX Files to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for asset_path in xrnx_packages/*; do
-            asset_name=$(basename "$asset_path")
-            echo "Uploading $asset_name..."
-            curl \
-              -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$asset_path" \
-              "${{ steps.create_release.outputs.upload_url }}?name=$asset_name"
-          done
+      
+      # Upload .xrnx file
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./kschzt.genq.xrnx
+          asset_name: kschzt.genq.xrnx
+          asset_content_type: application/octet-stream
