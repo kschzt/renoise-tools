@@ -53,10 +53,22 @@ jobs:
           prerelease: false
 
       # Upload each .release.xrnx package to the release
-      - name: Upload Release Assets
+      - name: Upload kschzt.genq.release.xrnx
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./xrnx_packages/*.release.xrnx
-          asset_name: '*.release.xrnx'
+          asset_path: ./xrnx_packages/kschzt.genq.release.xrnx
+          asset_name: kschzt.genq.release.xrnx
+          asset_content_type: application/octet-stream
+
+      - name: Upload kschzt.test.release.xrnx
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./xrnx_packages/kschzt.test.release.xrnx
+          asset_name: kschzt.test.release.xrnx
           asset_content_type: application/octet-stream
