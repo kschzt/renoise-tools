@@ -79,14 +79,8 @@ function GenQ:__init()
   self.trigger_instrument = options.trigger_instrument.value
 
   -- Add menu entries
-  renoise.tool():add_menu_entry {
-    name = "Main Menu:Tools:Random Note Generator:Process Pattern",
-    invoke = function() self:process_pattern() end
-  }
-  renoise.tool():add_menu_entry {
-    name = "Main Menu:Tools:Random Note Generator:Configure Settings",
-    invoke = function() self:show_gui() end
-  }
+  renoise.tool():add_menu_entry{name="Main Menu:Tools:Random Note Generator:Process Pattern",invoke=function() self:process_pattern() end}
+  renoise.tool():add_menu_entry{name="Main Menu:Tools:Random Note Generator:Configure Settings",invoke=function() self:show_gui() end}
 
   -- Remove the previous notifier code and replace with:
   renoise.tool().app_idle_observable:add_notifier(function()
@@ -124,7 +118,7 @@ function GenQ:process_pattern()
   local song = renoise.song()
   local pattern = song.selected_pattern
   local track = pattern.tracks[song.selected_track_index]
-
+ 
   -- Only process note tracks
   if song.tracks[song.selected_track_index].type ~= renoise.Track.TRACK_TYPE_SEQUENCER then 
     return 
@@ -139,6 +133,7 @@ function GenQ:process_pattern()
       
       -- If we find C-0, randomize all notes in the next column
       if note_column and note_column.note_value == 0 then
+        if track.visible_note_columns < 2 then track.visible_note_columns = 2 end
         -- Process all lines in the next column
         for process_line = 1, pattern.number_of_lines do
           local process_note = track:line(process_line).note_columns[column_index + 1]
@@ -204,18 +199,19 @@ function GenQ:show_gui()
 
   local dialog_content = vb:column {
     vb:row {
-      vb:text { text = "Select Scale:" },
+      vb:text { text = "Select Scale", width=125},
       vb:popup {
-        items = scale_items,
+        items = scale_items, width=150,
         value = table.find(scale_map, self.selected_scale) or 1,
         notifier = function(index)
           self.selected_scale = scale_map[index]
           options.selected_scale.value = self.selected_scale
+          renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR  
         end
       }
     },
     vb:row {
-      vb:text { text = "Note Range (Low-High):" },
+      vb:text { text = "Note Range (Low-High)", width=125 },
       vb:valuebox {
         min = 0,
         max = 127,
@@ -223,6 +219,7 @@ function GenQ:show_gui()
         notifier = function(value)
           self.note_range[1] = value
           options.note_range_min.value = value
+          renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         end
       },
       vb:valuebox {
@@ -232,11 +229,12 @@ function GenQ:show_gui()
         notifier = function(value)
           self.note_range[2] = value
           options.note_range_max.value = value
+          renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         end
       }
     },
     vb:row {
-      vb:text { text = "Trigger Instrument:" },
+      vb:text { text = "Trigger Instrument",width=125 },
       vb:valuebox {
         min = 0,
         max = 255,
@@ -244,25 +242,46 @@ function GenQ:show_gui()
         notifier = function(value)
           self.trigger_instrument = value
           options.trigger_instrument.value = value
+          renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         end
       }
     },
     vb:row {
-      vb:text { text = "Pattern Type:" },
+      vb:text { text = "Pattern Type", width=125 },
       vb:popup {
-        items = self.pattern_types,
+        items = self.pattern_types, width=150,
         value = table.find(self.pattern_types, self.current_pattern) or 1,
         notifier = function(index)
           self.current_pattern = self.pattern_types[index]
           options.current_pattern.value = self.current_pattern
           self.prev_note = nil
+          renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         end
-      }
-    }
+      },
+     
+    },
+      vb:row{vb:button{text="Process Pattern",width=125, notifier=function() 
+      self:process_pattern()
+      renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
+      end}},
+    
   }
 
-  renoise.app():show_custom_dialog("Random Note Generator Settings", dialog_content)
+  renoise.app():show_custom_dialog("Random Note Generator Settings", dialog_content, genq_keyhandler_func)
+  renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
 end
+
+function genq_keyhandler_func(dialog, key)
+  local closer = "esc"
+  if key.modifiers == "" and key.name == closer then
+    dialog:close()
+    dialog = nil
+    return
+  else 
+    return key
+  end
+end
+
 
 function GenQ:get_scale_from_volume(volume)
   -- Create an array of scale names in a fixed order
@@ -317,11 +336,11 @@ function GenQ:check_for_trigger()
   for track_index = 1, #pattern.tracks do
     local track = song.tracks[track_index]
     local pattern_track = pattern.tracks[track_index]
-
+     
     -- Only process note tracks
     if track.type == renoise.Track.TRACK_TYPE_SEQUENCER then 
       local line = pattern_track:line(next_line)  -- Look at next line
-      
+
       -- Check each note column for notes in octave 0
       for column_index = 1, track.visible_note_columns do
         local note_column = line.note_columns[column_index]
