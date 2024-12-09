@@ -1,0 +1,69 @@
+name: Package and Release XRNX Files
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Find and package all .xrnx directories
+      - name: Find and Package XRNX Directories
+        id: package_xrnx
+        run: |
+          mkdir -p packaged
+          # Find all directories ending with .xrnx and zip them
+          find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
+            xrnx_name=$(basename "$xrnx_dir")
+            zip -r "packaged/$xrnx_name.zip" "$xrnx_dir" \
+              -x "*.git*" "*.github*" \
+              "preferences.xml" \
+              "preferencesDynamicView.xml"
+          done
+          # List the packaged files for verification
+          ls -1 packaged/*.zip
+
+      # Generate a release tag based on the current date and time
+      - name: Generate Tag Name
+        run: |
+          echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+
+      # Create and push a tag
+      - name: Create and Push Tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag $TAG_NAME
+          git push origin $TAG_NAME
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Create a GitHub release for the tag
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: Release ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
+
+      # Upload all packaged XRNX files to the release
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: packaged
+          asset_name: "*.zip"
+          asset_content_type: application/octet-stream
