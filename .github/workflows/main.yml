@@ -14,17 +14,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
       
-      # Zip the contents of the folder into an .xrnx file
+      # Zip the contents of the repo into a uniquely named .xrnx package
       - name: Zip XRNX Package
         run: |
-          zip -r kschzt.genq.xrnx kschzt.genq.xrnx/*
+          zip -r kschzt.genq.release.xrnx kschzt.genq.xrnx/* \
+            -x "*.git*" "*.github*" \
+            "preferences.xml" 
       
       # Dynamically generate a tag name
       - name: Generate Tag Name
-        run: |
-          echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+        run: echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
       
-      # Create a tag and push it
+      # Create and push a Git tag
       - name: Create and Push Tag
         run: |
           git config --local user.email "action@github.com"
@@ -34,21 +35,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      # Create GitHub release
+      # Create a GitHub release
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG_NAME }}
           release_name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
       
-      # Upload .xrnx file
+      # Upload the .xrnx package to the release
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./kschzt.genq.xrnx
-          asset_name: kschzt.genq.xrnx
+          asset_path: ./kschzt.genq.release.xrnx
+          asset_name: kschzt.genq.release.xrnx
           asset_content_type: application/octet-stream
