@@ -1,4 +1,4 @@
-name: Package and Release XRNX Files
+name: XRNX Deploy (1 Folder -> 1 XRNX)
 
 on:
   workflow_dispatch:
@@ -19,16 +19,16 @@ jobs:
         id: package_xrnx
         run: |
           mkdir -p packaged
-          # Find all directories ending with .xrnx and zip them
+          # Find all directories ending with .xrnx and package them
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
-            zip -r "packaged/$xrnx_name.zip" "$xrnx_dir" \
+            zip -r "packaged/$xrnx_name" "$xrnx_dir" \
               -x "*.git*" "*.github*" \
               "preferences.xml" \
               "preferencesDynamicView.xml"
           done
-          # List the packaged files for verification
-          ls -1 packaged/*.zip
+          # Save the list of packaged files for later steps
+          ls -1 packaged/*.xrnx > packaged_files.txt
 
       # Generate a release tag based on the current date and time
       - name: Generate Tag Name
@@ -57,13 +57,18 @@ jobs:
           draft: false
           prerelease: false
 
-      # Upload all packaged XRNX files to the release
+      # Upload each packaged XRNX file to the release
       - name: Upload Release Assets
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: packaged
-          asset_name: "*.zip"
-          asset_content_type: application/octet-stream
+        run: |
+          while read -r asset_path; do
+            asset_name=$(basename "$asset_path")
+            echo "Uploading $asset_name"
+            curl \
+              -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$asset_path" \
+              "${{ steps.create_release.outputs.upload_url }}"?name="$asset_name"
+          done < packaged_files.txt
