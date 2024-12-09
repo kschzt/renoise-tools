@@ -14,13 +14,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Create .release.xrnx packages for each .xrnx folder
+      # Create .xrnx packages with the updated naming convention
       - name: Zip XRNX Packages
         run: |
           mkdir -p xrnx_packages
           for xrnx_dir in *.xrnx; do
             if [ -d "$xrnx_dir" ]; then
-              output_name=$(basename "$xrnx_dir" .xrnx).release.xrnx
+              folder_name=$(basename "$xrnx_dir" .xrnx)
+              if [[ "$folder_name" == "kschzt."* ]]; then
+                clean_name=${folder_name#kschzt.}
+                output_name="com.kschzt.${clean_name}.xrnx"
+              else
+                output_name="com.kschzt.${folder_name}.xrnx"
+              fi
               echo "Zipping $xrnx_dir into $output_name..."
               zip -r "./xrnx_packages/$output_name" "$xrnx_dir"/*
             fi
@@ -52,23 +58,13 @@ jobs:
           draft: false
           prerelease: false
 
-      # Upload each .release.xrnx package to the release
-      - name: Upload kschzt.genq.release.xrnx
-        uses: actions/upload-release-asset@v1
+      # Upload all .xrnx files to the release
+      - name: Upload Release Assets
+        run: |
+          for asset_path in xrnx_packages/*.xrnx; do
+            asset_name=$(basename "$asset_path")
+            echo "Uploading $asset_name..."
+            gh release upload "${{ env.TAG_NAME }}" "$asset_path" --name "$asset_name" --content-type application/octet-stream
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./xrnx_packages/kschzt.genq.release.xrnx
-          asset_name: kschzt.genq.release.xrnx
-          asset_content_type: application/octet-stream
-
-      - name: Upload kschzt.test.release.xrnx
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./xrnx_packages/kschzt.test.release.xrnx
-          asset_name: kschzt.test.release.xrnx
-          asset_content_type: application/octet-stream
