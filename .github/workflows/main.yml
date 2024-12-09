@@ -10,26 +10,22 @@ jobs:
   package-and-release:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Check out the repository
+      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # Step 2: Create .xrnx files
+      # Step 2: Package each .xrnx folder
       - name: Package XRNX Files
         run: |
           mkdir -p xrnx_packages
-          # Loop through all .xrnx folders
           find . -type d -name "*.xrnx" | while read -r xrnx_dir; do
             xrnx_name=$(basename "$xrnx_dir")
             echo "Zipping $xrnx_name..."
-            # Create the .xrnx file containing only the folder's contents
             (cd "$xrnx_dir" && zip -r "../xrnx_packages/$xrnx_name" .)
           done
-          # Verify the created files
-          echo "Created packages:"
           ls -l xrnx_packages/
 
-      # Step 3: Generate a tag for the release
+      # Step 3: Generate a tag name
       - name: Generate Tag Name
         run: |
           echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
@@ -56,7 +52,7 @@ jobs:
           draft: false
           prerelease: false
 
-      # Step 6: Upload .xrnx files to the release
+      # Step 6: Upload each .xrnx file to the release
       - name: Upload XRNX Files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -68,6 +64,6 @@ jobs:
               -X POST \
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Content-Type: application/octet-stream" \
-              --data-binary @"$asset_path" \
-              "${{ steps.create_release.outputs.upload_url }}"?name="$asset_name"
+              --form "file=@$asset_path" \
+              "${{ steps.create_release.outputs.upload_url }}&name=$asset_name"
           done
