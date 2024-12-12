@@ -175,17 +175,17 @@ function GenQ:show_gui()
   
   -- Create arrays for popup items with hex numbers
   local scale_items = {
-    "00 Major", "08 Minor", "10 Harmonic Minor", "18 Melodic Minor",
-    "20 Pentatonic", "28 Minor Pentatonic", "30 Dorian", "38 Phrygian",
-    "40 Lydian", "48 Mixolydian", "50 Locrian", "58 Blues",
-    "60 Whole Tone", "68 Diminished", "70 Augmented", "78 Chromatic",
-    "80 Hungarian Minor", "88 Persian", "90 Japanese", "98 Arabic", "A0 Bebop",
-    "A8 Prometheus", "B0 Algerian", "B8 Byzantine", "C0 Egyptian", "C8 Eight Tone",
-    "D0 Enigmatic", "D8 Neapolitan", "E0 Neapolitan Minor", "E8 Romanian Minor",
-    "F0 Ukrainian Dorian", "F8 Yo", "FF In Sen", "01 Bhairav", "09 Marva", "11 Purvi",
-    "19 Todi", "21 Super Locrian", "29 Double Harmonic", "31 Hindu", "39 Kumoi",
-    "41 Iwato", "49 Messiaen Mode 1", "51 Messiaen Mode 2", "59 Messiaen Mode 3",
-    "61 Leading Whole Tone"
+    "00 Major", "01 Minor", "02 Harmonic Minor", "03 Melodic Minor",
+    "04 Pentatonic", "05 Minor Pentatonic", "06 Dorian", "07 Phrygian",
+    "08 Lydian", "09 Mixolydian", "10 Locrian", "11 Blues",
+    "12 Whole Tone", "13 Diminished", "14 Augmented", "15 Chromatic",
+    "16 Hungarian Minor", "17 Persian", "18 Japanese", "19 Arabic", "20 Bebop",
+    "21 Prometheus", "22 Algerian", "23 Byzantine", "24 Egyptian", "25 Eight Tone",
+    "26 Enigmatic", "27 Neapolitan", "28 Neapolitan Minor", "29 Romanian Minor",
+    "30 Ukrainian Dorian", "31 Yo", "32 In Sen", "33 Bhairav", "34 Marva", "35 Purvi",
+    "36 Todi", "37 Super Locrian", "38 Double Harmonic", "39 Hindu", "40 Kumoi",
+    "41 Iwato", "42 Messiaen Mode 1", "43 Messiaen Mode 2", "44 Messiaen Mode 3",
+    "45 Leading Whole Tone"
   }
   
   local scale_map = {
@@ -282,7 +282,7 @@ function GenQ:get_scale_from_volume(volume)
   
   -- Map volume (0-127) to scale index
   local scale_count = #scale_list
-  local index = math.floor((volume / 127) * scale_count) + 1
+  local index = math.floor((volume / 80) * scale_count) + 1
   index = math.min(index, scale_count)
   
   return scale_list[index]
