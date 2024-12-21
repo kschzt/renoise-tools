@@ -421,50 +421,51 @@ function GenQ:check_for_trigger()
   local pattern_index = song.sequencer:pattern(pos.sequence)
   local current_pattern = song.patterns[pattern_index]
   
-  local process_line = pos.line
-  if pos.line > 1 then
-    process_line = pos.line + 1
+  -- Check current line and next line for triggers
+  local lines_to_check = {pos.line}
+  if pos.line < current_pattern.number_of_lines then
+    table.insert(lines_to_check, pos.line + 1)
   end
   
-  for track_index = 1, #song.tracks do
-    local track = song.tracks[track_index]
-    if track.type == renoise.Track.TRACK_TYPE_SEQUENCER then 
-      local pattern_track = current_pattern:track(track_index)
-      local line = pattern_track:line(process_line)
+  for _, check_line in ipairs(lines_to_check) do
+    for track_index = 1, #song.tracks do
+      local track = song.tracks[track_index]
+      if track.type == renoise.Track.TRACK_TYPE_SEQUENCER then 
+        local pattern_track = current_pattern:track(track_index)
+        local line = pattern_track:line(check_line)
 
-      for column_index = 1, track.visible_note_columns do
-        local note_column = line.note_columns[column_index]
-        
-        if note_column and 
-           note_column.note_value >= 0 and 
-           note_column.note_value <= 11 and
-           note_column.instrument_value == self.trigger_instrument - 1 then
+        for column_index = 1, track.visible_note_columns do
+          local note_column = line.note_columns[column_index]
           
-          local root_note = note_column.note_value
-          local scale_name = self:get_scale_from_volume(note_column.volume_value)
-          local pattern_type = self:get_pattern_from_panning(note_column.panning_value)
-          
-          -- Store the current pattern type
-          self.current_pattern_type = pattern_type
-          
-          -- Update GUI if visible
-          if self.vb and self.dialog and self.dialog.visible then
-            if self.vb.views.scale_popup then
-              -- Find the scale index by matching the volume value directly
-              local scale_index = note_column.volume_value  -- Remove the +1
-              self.vb.views.scale_popup.value = scale_index
+          if note_column and 
+             note_column.note_value >= 0 and 
+             note_column.note_value <= 11 and
+             note_column.instrument_value == self.trigger_instrument - 1 then
+            
+            local root_note = note_column.note_value
+            local scale_name = self:get_scale_from_volume(note_column.volume_value)
+            local pattern_type = self:get_pattern_from_panning(note_column.panning_value)
+            
+            -- Store the current pattern type
+            self.current_pattern_type = pattern_type
+            
+            -- Update GUI if visible
+            if self.vb and self.dialog and self.dialog.visible then
+              if self.vb.views.scale_popup then
+                local scale_index = note_column.volume_value
+                self.vb.views.scale_popup.value = scale_index
+              end
+              if self.vb.views.pattern_popup then
+                self.vb.views.pattern_popup.value = pattern_type
+              end
             end
-            if self.vb.views.pattern_popup then
-              -- Add debug output
-              print(string.format("Updating pattern popup to index: %d", pattern_type))
-              self.vb.views.pattern_popup.value = pattern_type
+            
+            -- Process based on line position
+            if check_line == 1 then
+              self:process_pattern_immediately(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
+            else
+              self:process_next_column(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
             end
-          end
-          
-          if pos.line == 1 then
-            self:process_pattern_immediately(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
-          else
-            self:process_next_column(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
           end
         end
       end
@@ -475,205 +476,347 @@ end
 function GenQ:process_next_column(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
   local song = renoise.song()
   
+  -- Initialize column-specific state if needed
+  if not self.column_state then
+    self.column_state = {}
+  end
+  
   -- Process all tracks in the pattern
-  for track_idx = 1, #pattern.tracks do
+  for track_idx = track_index, #pattern.tracks do
     local track = song.tracks[track_idx]
     local pattern_track = pattern:track(track_idx)
     
-    -- Process all note columns in this track
-    for column_idx = 1, track.visible_note_columns do
-      -- Keep track of the last note for patterns that need it
-      local last_note = nil
+    -- Determine which columns to process based on track
+    local start_column = 1
+    if track_idx == track_index then
+      start_column = trigger_column_index + 1
+    end
+    
+    -- Process note columns in this track
+    for column_idx = start_column, track.visible_note_columns do
+      -- Create unique key for this column
+      local column_key = string.format("%d_%d", track_idx, column_idx)
+      
+      -- Initialize column state if needed
+      if not self.column_state[column_key] then
+        self.column_state[column_key] = {
+          last_note = nil,
+          phrase_position = 1,
+          direction = math.random(2) == 1 and 1 or -1,
+          tension = 0,
+          sequence = nil,
+          markov_state = nil,
+          variation_seed = math.random()  -- Unique variation per column
+        }
+      end
+      
+      local col_state = self.column_state[column_key]
       
       for line_index = 1, pattern.number_of_lines do
         local line = pattern_track:line(line_index)
         local note_column = line.note_columns[column_idx]
         
         if note_column and note_column.note_value > 0 and note_column.note_value < 120 then
-          -- Check if this note's instrument has GENQ config
           local config = self:get_instrument_config(note_column.instrument_value + 1)
           if config then
             local scale = self.scales[scale_name]
+            if not scale then
+              renoise.app():show_status("Warning: Scale not found: " .. scale_name)
+              return
+            end
+
             local new_note = nil
+            local base_octave = self:get_octave(config.note_range[1], config.note_range[2])
+            
+            -- Add column-specific octave variation
+            local octave_offset = (column_idx - 1) % 2 == 0 and 12 or 0
+            base_octave = base_octave + octave_offset
             
             -- Handle different pattern types
             if pattern_type == 2 then  -- "2 up" pattern
-              if last_note == nil then
-                last_note = 1
+              if col_state.last_note == nil then
+                col_state.last_note = 1
               else
-                last_note = (last_note % #scale) + 1
+                col_state.last_note = (col_state.last_note % #scale) + 1
               end
               
-              local base_octave = self:get_octave(config.note_range[1], config.note_range[2])
               local octave_shift = math.floor((line_index - 1) / #scale) * 12
-              new_note = scale[last_note] + base_octave + octave_shift + root_note
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave + octave_shift, config)
 
             elseif pattern_type == 3 then  -- "3 down" pattern
-              if last_note == nil then
-                last_note = #scale
+              if col_state.last_note == nil then
+                col_state.last_note = #scale
               else
-                last_note = last_note - 1
-                if last_note < 1 then 
-                  last_note = #scale
+                col_state.last_note = col_state.last_note - 1
+                if col_state.last_note < 1 then 
+                  col_state.last_note = #scale
                 end
               end
               
-              local base_octave = self:get_octave(config.note_range[1], config.note_range[2])
               local octave_shift = -math.floor((line_index - 1) / #scale) * 12
-              new_note = scale[last_note] + base_octave + octave_shift + root_note
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave + octave_shift, config)
 
             elseif pattern_type == 4 then  -- "4 random_walk"
-              if last_note == nil then
-                last_note = math.random(1, #scale)
+              if col_state.last_note == nil then
+                col_state.last_note = math.random(1, #scale)
               else
                 local direction = math.random(2) == 1 and 1 or -1
-                last_note = last_note + direction
-                if last_note < 1 then last_note = #scale
-                elseif last_note > #scale then last_note = 1 end
+                col_state.last_note = col_state.last_note + direction
+                if col_state.last_note < 1 then col_state.last_note = #scale
+                elseif col_state.last_note > #scale then col_state.last_note = 1 end
               end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
 
             elseif pattern_type == 5 then  -- "5 jazz_walk"
-              if last_note == nil then
-                last_note = math.random(1, #scale)
+              if col_state.last_note == nil then
+                col_state.last_note = math.random(1, #scale)
               else
-                local intervals = {2, 2, 2, 3, 3, 4, 4, 5}  -- weighted towards common jazz intervals
-                local interval = intervals[math.random(#intervals)]
-                last_note = last_note + (math.random(2) == 1 and interval or -interval)
-                while last_note < 1 do last_note = last_note + #scale end
-                while last_note > #scale do last_note = last_note - #scale end
+                -- More varied intervals with some randomization
+                local base_intervals = column_idx % 2 == 0 
+                  and {1, 2, 2, 3, 4}  -- Even columns: mix of small and medium intervals
+                  or {2, 3, 3, 4, 5}   -- Odd columns: mix of medium and large intervals
+                
+                -- Add some randomization to interval selection
+                local interval = base_intervals[math.random(#base_intervals)]
+                if math.random() < 0.2 then  -- 20% chance to modify interval
+                  interval = interval + (math.random(2) == 1 and 1 or -1)
+                end
+                
+                local direction = math.random(2) == 1 and 1 or -1
+                -- Bias direction based on position in scale to avoid getting stuck
+                if col_state.last_note > #scale * 0.7 then
+                  direction = math.random() < 0.7 and -1 or 1  -- 70% chance to go down
+                elseif col_state.last_note < #scale * 0.3 then
+                  direction = math.random() < 0.7 and 1 or -1  -- 70% chance to go up
+                end
+                
+                col_state.last_note = col_state.last_note + (direction * interval)
+                while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
+                while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
               end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              new_note = scale[col_state.last_note] + base_octave + root_note
 
             elseif pattern_type == 6 then  -- "6 modal_drift"
               local shift = math.floor(line_index / 4) % #scale
               local pos = ((line_index - 1) % #scale) + 1
               local shifted_pos = ((pos + shift - 1) % #scale) + 1
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[shifted_pos] + octave + root_note
+              -- Add column variation
+              if column_idx % 2 == 1 then
+                shifted_pos = ((shifted_pos + 2) % #scale) + 1
+              end
+              new_note = self:quantize_to_scale(shifted_pos, scale, root_note, base_octave, config)
 
             elseif pattern_type == 7 then  -- "7 tension_release"
-              if last_note == nil then
-                last_note = math.random(1, #scale)
+              if col_state.last_note == nil then
+                col_state.last_note = 1
+                col_state.tension = 0
+                col_state.base_octave = base_octave
               else
-                if line_index % 8 < 6 then  -- tension phase
-                  last_note = last_note + 1
-                  if last_note > #scale then last_note = 1 end
-                else  -- release phase
-                  last_note = math.max(1, last_note - math.random(3, 5))
+                -- Different tension patterns per column
+                local tension_length = column_idx % 2 == 0 and 6 or 4
+                if line_index % 8 < tension_length then
+                  col_state.tension = math.min(col_state.tension + 1, 12)
+                  col_state.last_note = col_state.last_note + 1
+                  if col_state.last_note > #scale then 
+                    col_state.last_note = 1
+                    -- Safely increase octave within config range
+                    local new_octave = col_state.base_octave + 6
+                    if new_octave <= config.note_range[2] - 12 then
+                      col_state.base_octave = new_octave
+                    end
+                  end
+                else
+                  col_state.tension = math.max(0, col_state.tension - 1)
+                  col_state.last_note = math.max(1, col_state.last_note - 1)
+                  -- Reset octave during release
+                  col_state.base_octave = base_octave
                 end
               end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              new_note = scale[col_state.last_note] + col_state.base_octave + root_note
 
             elseif pattern_type == 8 then  -- "8 melodic_contour"
-              local wave = math.sin(line_index * 0.5)
+              local wave = math.sin(line_index * 0.5 + (column_idx * math.pi / 2))  -- Phase shift per column
               local pos = math.floor((wave + 1) * (#scale / 2))
               pos = math.max(1, math.min(pos, #scale))
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[pos] + octave + root_note
+              new_note = self:quantize_to_scale(pos, scale, root_note, base_octave, config)
 
             elseif pattern_type == 9 then  -- "9 phrase_based"
               local phrase_pos = line_index % 16
-              if phrase_pos == 0 or last_note == nil then
-                last_note = math.random(1, #scale)  -- phrase start
+              if phrase_pos == 0 or col_state.last_note == nil then
+                col_state.last_note = math.random(1, #scale)  -- phrase start
               elseif phrase_pos % 4 == 0 then
-                last_note = last_note + (math.random(2) == 1 and 2 or -2)  -- phrase variation
+                col_state.last_note = col_state.last_note + (math.random(2) == 1 and 2 or -2)  -- phrase variation
               end
-              while last_note < 1 do last_note = last_note + #scale end
-              while last_note > #scale do last_note = last_note - #scale end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
+              while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
 
-            elseif pattern_type == 10 then  -- "10 markov"
-              if not self.markov_transitions then
-                self.markov_transitions = {}
+            elseif pattern_type == 10 then  -- "0A markov"
+              -- Reset markov state at start of pattern or when changing pattern type
+              if line_index == 1 or col_state.last_pattern_type ~= pattern_type then
+                col_state.markov_transitions = nil
+                col_state.last_pattern_type = pattern_type
+              end
+              
+              if not col_state.markov_transitions then
+                -- Initialize Markov transition probabilities
+                col_state.markov_transitions = {}
                 for i = 1, #scale do
-                  self.markov_transitions[i] = {}
+                  col_state.markov_transitions[i] = {}
                   for j = 1, #scale do
+                    -- Higher probability for small intervals
                     local interval = math.abs(i - j)
-                    self.markov_transitions[i][j] = math.exp(-interval * 0.5)
+                    col_state.markov_transitions[i][j] = math.exp(-interval * (0.5 + column_idx * 0.1))
                   end
                 end
               end
               
-              if last_note == nil then
-                last_note = math.random(1, #scale)
+              if col_state.last_note == nil then
+                col_state.last_note = math.random(1, #scale)
               else
-                local probs = self.markov_transitions[last_note]
+                -- Choose next note based on transition probabilities
+                local probs = col_state.markov_transitions[col_state.last_note]
                 local total = 0
                 for _, p in ipairs(probs) do total = total + p end
                 local r = math.random() * total
                 for i, p in ipairs(probs) do
                   r = r - p
                   if r <= 0 then
-                    last_note = i
+                    col_state.last_note = i
                     break
                   end
                 end
               end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
 
             elseif pattern_type == 11 then  -- "11 euclidean"
               local steps = #scale
-              local pulses = math.ceil(steps * 0.4)  -- 40% density
+              local pulses = math.ceil(steps * (0.4 + (column_idx % 2) * 0.1))  -- Different density per column
               local position = line_index % steps
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
               if (position * pulses) % steps < pulses then
-                new_note = scale[math.random(#scale)] + octave + root_note
+                new_note = self:quantize_to_scale(math.random(#scale), scale, root_note, base_octave, config)
               else
-                new_note = scale[last_note or 1] + octave + root_note
+                new_note = self:quantize_to_scale(col_state.last_note or 1, scale, root_note, base_octave, config)
               end
 
             elseif pattern_type == 12 then  -- "12 melodic_sequence"
-              local sequence = {2, 4, 1, 3}  -- example sequence
-              local pos = sequence[(line_index % #sequence) + 1]
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[pos] + octave + root_note
+              -- Initialize sequence if not done
+              if not col_state.sequence then
+                -- Create a short motif (2-4 notes)
+                local motif_length = math.random(2, 4)
+                col_state.sequence = {
+                  pattern = {},  -- The actual notes in scale degrees
+                  direction = math.random(2) == 1 and 1 or -1,  -- Up or down
+                  interval = math.random(1, 2),  -- Reduced max interval to prevent range issues
+                  type = math.random(3)  -- 1=real, 2=tonal, 3=modified
+                }
+                
+                -- Generate initial motif
+                local start_degree = math.random(1, #scale - motif_length)
+                for i = 1, motif_length do
+                  table.insert(col_state.sequence.pattern, start_degree + i - 1)
+                end
+              end
+              
+              -- Calculate position in sequence
+              local seq = col_state.sequence
+              local motif_pos = (line_index - 1) % #seq.pattern
+              local repetition = math.floor((line_index - 1) / #seq.pattern)
+              
+              -- Get base scale degree from pattern
+              local base_degree = seq.pattern[motif_pos + 1]
+              
+              -- Apply transposition based on sequence type
+              if seq.type == 1 then  -- Real sequence
+                -- Limit transposition to prevent range issues
+                local max_transpose = math.floor((config.note_range[2] - base_octave - root_note) / 12)
+                local min_transpose = math.floor((config.note_range[1] - base_octave - root_note) / 12)
+                local transpose = math.min(math.max(
+                  repetition * seq.interval * seq.direction,
+                  min_transpose
+                ), max_transpose)
+                
+                local note_value = scale[base_degree] + (transpose * 12)
+                new_note = note_value + base_octave + root_note
+                
+              elseif seq.type == 2 then  -- Tonal sequence
+                -- Move pattern up/down the scale
+                local scale_pos = base_degree + (repetition * seq.interval * seq.direction)
+                -- Wrap around scale
+                while scale_pos > #scale do scale_pos = scale_pos - #scale end
+                while scale_pos < 1 do scale_pos = scale_pos + #scale end
+                new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
+                
+              else  -- Modified sequence
+                -- Preserve contour but adapt to scale
+                local scale_pos = base_degree + (repetition * seq.interval * seq.direction)
+                -- Ensure we stay within reasonable range
+                scale_pos = ((scale_pos - 1) % #scale) + 1
+                -- Add column-specific variation while preserving contour
+                if motif_pos > 0 then
+                  local prev_degree = seq.pattern[motif_pos]
+                  local interval = base_degree - prev_degree
+                  scale_pos = scale_pos + ((interval + column_idx) % 3)
+                end
+                new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
+              end
+              
+              -- Reset sequence after 4 repetitions
+              if line_index > #seq.pattern * 4 then
+                col_state.sequence = nil
+              end
 
             elseif pattern_type == 13 then  -- "13 melodic_development"
-              if line_index % 8 == 0 or last_note == nil then
-                last_note = math.random(1, #scale)  -- new phrase
+              if line_index % 8 == 0 or col_state.last_note == nil then
+                col_state.last_note = math.random(1, #scale)  -- new phrase
               else
                 local variation = math.floor(line_index / 8)  -- increase variation over time
                 local step = math.random(-variation, variation)
-                last_note = math.max(1, math.min(last_note + step, #scale))
+                -- Add column-specific variation
+                if column_idx % 2 == 1 then
+                  step = step * 2  -- More dramatic changes in odd columns
+                end
+                col_state.last_note = math.max(1, math.min(col_state.last_note + step, #scale))
               end
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[last_note] + octave + root_note
+              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
 
             elseif pattern_type == 14 then  -- "14 melodic_phrase"
-              local phrases = {
-                {1, 3, 2, 5}, {5, 4, 3, 1}, {1, 2, 3, 5, 4}, {3, 2, 1, 2}
-              }
-              local phrase = phrases[math.floor(line_index / 4) % #phrases + 1]
+              -- Different phrase sets per column
+              local phrases = column_idx % 2 == 0
+                and {{1, 3, 2, 5}, {5, 4, 3, 1}, {1, 2, 3, 5, 4}}  -- Even columns
+                or {{3, 2, 1, 2}, {4, 2, 3, 1}, {2, 4, 3, 1, 5}}   -- Odd columns
+              
+              local phrase_length = 4 * (1 + (column_idx % 2))  -- Vary phrase length by column
+              local phrase = phrases[math.floor(line_index / phrase_length) % #phrases + 1]
               local pos = phrase[line_index % #phrase + 1]
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale[pos] + octave + root_note
+              new_note = self:quantize_to_scale(pos, scale, root_note, base_octave, config)
 
             elseif pattern_type == 15 then  -- "15 rhythmic_phrase"
-              local rhythm = {1, 0, 1, 0, 1, 1, 0, 1}  -- example rhythm
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
+              -- Different rhythms per column
+              local rhythm = column_idx % 2 == 0
+                and {1, 0, 1, 0, 1, 1, 0, 1}  -- Even columns
+                or {1, 1, 0, 1, 0, 1, 0, 0}   -- Odd columns
+              
               if rhythm[line_index % #rhythm + 1] == 1 then
-                if last_note == nil then
-                  last_note = math.random(1, #scale)
+                if col_state.last_note == nil then
+                  col_state.last_note = math.random(1, #scale)
                 else
-                  last_note = last_note + (math.random(3) - 2)  -- small steps
-                  while last_note < 1 do last_note = last_note + #scale end
-                  while last_note > #scale do last_note = last_note - #scale end
+                  col_state.last_note = col_state.last_note + (math.random(3) - 2)  -- small steps
+                  while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
+                  while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
                 end
-                new_note = scale[last_note] + octave + root_note
+                new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
               else
-                new_note = scale[last_note or 1] + octave + root_note
+                new_note = self:quantize_to_scale(col_state.last_note or 1, scale, root_note, base_octave, config)
               end
 
             else  -- "1 random" (default)
-              local scale_note = scale[math.random(#scale)]
-              local octave = self:get_octave(config.note_range[1], config.note_range[2])
-              new_note = scale_note + octave + root_note
+              -- Add some column-specific variation to random
+              local scale_pos = math.random(#scale)
+              if column_idx % 2 == 1 then
+                scale_pos = ((scale_pos + 2) % #scale) + 1
+              end
+              new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
             end
             
             -- Keep within configured range
@@ -686,9 +829,14 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
   end
 end
 
--- Update process_pattern_immediately similarly
+-- Reset column state when starting new pattern
+function GenQ:reset_column_state()
+  self.column_state = {}
+end
+
+-- Call reset when processing new pattern
 function GenQ:process_pattern_immediately(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
-  -- Same code as process_next_column
+  self:reset_column_state()
   self:process_next_column(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
 end
 
@@ -725,46 +873,30 @@ function GenQ:get_octave(note_min, note_max)
   return mid_oct * 12
 end
 
-function GenQ:analyze_pattern(pattern)
-  local analysis = {
-    intervals = {},      -- Common intervals used
-    rhythmic_density = 0, -- Notes per line
-    range = {min = 127, max = 0},
-    common_sequences = {}
-  }
-  -- Analyze existing pattern to inform generation
-  return analysis
+-- Add this helper function
+function GenQ:quantize_to_scale(note_index, scale, root_note, octave, config)
+  -- Ensure note_index is within scale bounds
+  while note_index < 1 do note_index = note_index + #scale end
+  while note_index > #scale do note_index = note_index - #scale end
+  
+  -- Get the scale degree and add octave and root
+  local scale_note = scale[note_index]
+  local new_note = scale_note + octave + root_note
+  
+  -- Ensure note stays within configured range if config is provided
+  if config then
+    new_note = self:enforce_note_range(new_note, config)
+  end
+  
+  return new_note
 end
 
-function GenQ:get_phrase_position(line_index)
-  -- Track where we are in musical phrases
-  local phrase_length = 8
-  local position = line_index % phrase_length
-  local is_phrase_start = position == 0
-  local is_phrase_end = position == phrase_length - 1
-  
-  return {
-    position = position,
-    strength = is_phrase_start and 3 or (position % 2 == 0 and 2 or 1),
-    is_start = is_phrase_start,
-    is_end = is_phrase_end
-  }
-end
-
-function GenQ:save_instrument_config(instrument_index, min, max, display_name)
-  local song = renoise.song()
-  local instrument = song.instruments[instrument_index]
-  if not instrument then return end
-  
-  -- Format: GENQ:min:max|Display Name
-  local config = string.format(
-    "GENQ:%d:%d|%s",
-    min,
-    max,
-    display_name or ""
-  )
-  
-  instrument.name = config
+-- Add this helper function to enforce note range
+function GenQ:enforce_note_range(note, config)
+  -- Ensure note stays within instrument's configured range
+  while note < config.note_range[1] do note = note + 12 end
+  while note > config.note_range[2] do note = note - 12 end
+  return note
 end
 
 -- Create a single instance of the tool
