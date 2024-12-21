@@ -76,7 +76,18 @@ function GenQ:__init()
 
   -- Helper function to get scale from volume
   function GenQ:get_scale_from_volume(volume)
-    return self.id_to_scale_name[volume] or "major"  -- Direct lookup with fallback
+    -- Ensure volume is a valid number
+    if type(volume) ~= "number" then
+      renoise.app():show_status("Warning: Invalid volume value for scale selection")
+      return "major"
+    end
+    
+    local scale_name = self.id_to_scale_name[volume]
+    if not scale_name or not self.scales[scale_name] then
+      return "major"  -- Direct lookup with fallback
+    end
+    
+    return scale_name
   end
 
   -- Unified pattern types with metadata
@@ -254,17 +265,43 @@ end
 
 -- Helper function to get scale intervals
 function GenQ:get_scale_intervals(scale_name)
-  return self.scales[scale_name] and self.scales[scale_name].intervals or self.scales.major.intervals
+  -- Handle nil or invalid scale name
+  if not scale_name or type(scale_name) ~= "string" then
+    renoise.app():show_status("Warning: Invalid scale name, using major scale")
+    return self.scales.major.intervals
+  end
+  
+  -- Get scale and validate intervals
+  local scale = self.scales[scale_name]
+  if not scale or not scale.intervals or #scale.intervals == 0 then
+    renoise.app():show_status("Warning: Invalid scale definition for " .. scale_name .. ", using major scale")
+    return self.scales.major.intervals
+  end
+  
+  return scale.intervals
 end
 
 -- Helper function to get pattern from panning
 function GenQ:get_pattern_from_panning(panning)
+  -- Ensure panning is a number and in valid range
+  if type(panning) ~= "number" then return 1 end
+  panning = math.floor(panning)
+  
+  -- Check if panning value maps to a valid pattern
+  local valid_pattern = false
   for _, pattern in pairs(self.patterns) do
     if pattern.id == panning then
-      return pattern.id
+      valid_pattern = true
+      break
     end
   end
-  return 1  -- Default fallback
+  
+  if not valid_pattern then
+    renoise.app():show_status(string.format("Warning: Invalid pattern type %d, using default", panning))
+    return 1  -- Default to random pattern
+  end
+  
+  return panning
 end
 
 function GenQ:get_instrument_config(instrument_index)
@@ -279,10 +316,19 @@ function GenQ:get_instrument_config(instrument_index)
   local display_name = name:match("GENQ:%d+:%d+|(.+)") or ""
     
   if min and max then
-    return {
-      note_range = {tonumber(min), tonumber(max)},
-      display_name = display_name
-    }
+    min = tonumber(min)
+    max = tonumber(max)
+    if min and max then
+      -- Ensure valid range
+      min = math.max(0, math.min(min, 119))
+      max = math.max(0, math.min(max, 119))
+      if min > max then min, max = max, min end
+      
+      return {
+        note_range = {min, max},
+        display_name = display_name
+      }
+    end
   end
   
   return nil
@@ -294,6 +340,7 @@ function GenQ:check_for_trigger()
 
   local song = renoise.song()
   local pos = song.transport.playback_pos
+  if not pos then return end  -- Extra safety check
   local pattern_index = song.sequencer:pattern(pos.sequence)
   local current_pattern = song.patterns[pattern_index]
   
@@ -314,7 +361,7 @@ function GenQ:check_for_trigger()
     -- At end of last pattern, check first line of first pattern (sequence loop)
     local first_pattern_index = song.sequencer:pattern(1)
     local first_pattern = song.patterns[first_pattern_index]
-    if first_pattern then
+    if first_pattern and #song.sequencer.pattern_sequence > 0 then
       table.insert(patterns_to_check, {pattern = first_pattern, line = 1})
     end
   end
@@ -346,15 +393,22 @@ function GenQ:check_for_trigger()
             
             -- Update GUI if visible
             if self.vb and self.dialog and self.dialog.visible then
+              -- Update scale popup safely
               if self.vb.views.scale_popup then
                 local scale_index = note_column.volume_value
-                if scale_index >= 1 and scale_index <= #self.scale_map then
+                if scale_index and scale_index >= 1 and scale_index <= #self.scale_map then
                   self.vb.views.scale_popup.value = scale_index
+                else
+                  renoise.app():show_status("Warning: Invalid scale index " .. tostring(scale_index))
                 end
               end
+              
+              -- Update pattern popup safely
               if self.vb.views.pattern_popup then
-                if pattern_type >= 1 and pattern_type <= #self.pattern_types then
+                if pattern_type and pattern_type >= 1 and pattern_type <= #self.pattern_types then
                   self.vb.views.pattern_popup.value = pattern_type
+                else
+                  renoise.app():show_status("Warning: Invalid pattern type " .. tostring(pattern_type))
                 end
               end
             end
@@ -384,16 +438,17 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
   -- Get current pattern index and sequence position
   local current_pattern_index = song.selected_pattern_index
   local current_sequence_pos = song.transport.playback_pos.sequence
+  local current_line = song.transport.playback_pos.line
   local current_time = os.clock() * 1000  -- Add millisecond precision
   
-  -- Create a unique key for this pattern iteration that includes time
-  local pattern_key = string.format("%d_%d_%.0f", current_pattern_index, current_sequence_pos, current_time)
+  -- Create a unique key for this pattern iteration that includes line position
+  local pattern_key = string.format("%d_%d_%d_%.0f", current_pattern_index, current_sequence_pos, current_line, current_time)
   
-  -- Reset column state if we're in a new pattern iteration
-  if self.last_pattern_key ~= pattern_key then
+  -- Reset column state only when we're in a completely new pattern context
+  if self.last_pattern_key and self.last_pattern_key:match("^(%d+_%d+)") ~= string.format("%d_%d", current_pattern_index, current_sequence_pos) then
     self.column_state = {}
-    self.last_pattern_key = pattern_key
   end
+  self.last_pattern_key = pattern_key
   
   -- Process all tracks in the pattern
   for track_idx = track_index, #pattern.tracks do
@@ -411,26 +466,23 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
       -- Create unique key for this column
       local column_key = string.format("%d_%d", track_idx, column_idx)
       
-      -- Initialize random state with time component
-      local random_state = (os.clock() * 1000 + column_idx * 100) % 1000000
-      local function col_random(max)
-        random_state = (1664525 * random_state + 1013904223) % 4294967296
-        if max then
-          return 1 + math.floor((random_state / 4294967296) * max)
-        end
-        return random_state / 4294967296
-      end
+      -- Initialize random state with more entropy
+      local time_component = os.clock() * 1000
+      local pattern_component = pattern.number_of_lines * 100
+      local track_component = track_idx * 1000
+      local column_component = column_idx * 10000
+      local random_state = (time_component + pattern_component + track_component + column_component) % 1000000
       
       -- Initialize column state if needed
       if not self.column_state[column_key] then
         self.column_state[column_key] = {
           last_note = nil,
           phrase_position = 1,
-          direction = col_random(2) == 1 and 1 or -1,
+          direction = nil,  -- Will be initialized with col_random
           tension = 0,
           sequence = nil,
           markov_state = nil,
-          variation_seed = col_random(),
+          variation_seed = nil,  -- Will be initialized with col_random
           random_state = random_state
         }
       end
@@ -438,12 +490,20 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
       local col_state = self.column_state[column_key]
       
       -- Update col_random to use column state
-      function col_random(max)
+      local function col_random(max)
         col_state.random_state = (1664525 * col_state.random_state + 1013904223) % 4294967296
         if max then
           return 1 + math.floor((col_state.random_state / 4294967296) * max)
         end
         return col_state.random_state / 4294967296
+      end
+      
+      -- Initialize direction and variation_seed if needed
+      if not col_state.direction then
+        col_state.direction = col_random(2) == 1 and 1 or -1
+      end
+      if not col_state.variation_seed then
+        col_state.variation_seed = col_random()
       end
       
       for line_index = 1, pattern.number_of_lines do
@@ -900,13 +960,23 @@ end
 -- Add this helper function
 function GenQ:quantize_to_scale(note_index, scale_name, root_note, octave, config)
   local scale = self:get_scale_intervals(scale_name)
+  if not scale then
+    renoise.app():show_status("Warning: Invalid scale " .. tostring(scale_name))
+    scale = self.scales.major.intervals  -- Fallback to major scale
+  end
   
-  -- Ensure note_index is within scale bounds
+  -- Ensure note_index is within scale bounds and not nil
+  note_index = note_index or 1
   while note_index < 1 do note_index = note_index + #scale end
   while note_index > #scale do note_index = note_index - #scale end
   
   -- Get the scale degree and add octave and root
   local scale_note = scale[note_index]
+  if not scale_note then
+    renoise.app():show_status("Warning: Invalid scale index " .. tostring(note_index))
+    scale_note = scale[1]  -- Fallback to root note
+  end
+  
   local new_note = scale_note + octave + root_note
   
   -- Ensure note stays within configured range if config is provided
@@ -937,9 +1007,24 @@ end
 
 -- Add this helper function to enforce note range
 function GenQ:enforce_note_range(note, config)
-  -- Ensure note stays within instrument's configured range
-  while note < config.note_range[1] do note = note + 12 end
-  while note > config.note_range[2] do note = note - 12 end
+  if not note or not config then return note end
+  
+  -- First ensure we have valid range values
+  local min_note = math.max(0, math.min(config.note_range[1], 119))
+  local max_note = math.max(0, math.min(config.note_range[2], 119))
+  
+  -- Swap if min is greater than max
+  if min_note > max_note then
+    min_note, max_note = max_note, min_note
+  end
+  
+  -- Try to keep note in range by octave shifts first
+  while note < min_note and note + 12 <= max_note do note = note + 12 end
+  while note > max_note and note - 12 >= min_note do note = note - 12 end
+  
+  -- Final clamp to ensure we're in range
+  note = math.max(min_note, math.min(note, max_note))
+  
   return note
 end
 
