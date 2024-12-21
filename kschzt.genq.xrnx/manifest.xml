@@ -10,5 +10,4 @@
   <Classes>
     <Class name="GenQ"/>
   </Classes>
-  <RequiredApplicationVersion>3.4</RequiredApplicationVersion>
 </RenoiseScriptingTool> 
