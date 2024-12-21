@@ -7,7 +7,6 @@ local options = renoise.Document.create("GenQSettings") {
   selected_scale = "major",
   note_range_min = 24,
   note_range_max = 84,
-  trigger_instrument = 1,
   current_pattern = "random"
 }
 
@@ -106,7 +105,7 @@ function GenQ:__init()
   self.selected_scale = "major"
   self.selected_pattern = 1
   self.note_range = {40, 80}
-  self.trigger_instrument = 1
+  self.trigger_instrument = 0  -- Hardcoded to instrument 0
 
   -- Add menu entries
   renoise.tool():add_menu_entry{name="Main Menu:Tools:Random Note Generator:Process Pattern",invoke=function() self:process_pattern() end}
@@ -254,26 +253,6 @@ function GenQ:show_gui()
             width = 50,
             notifier = function(value)
               self.note_range[2] = value
-            end
-          }
-        },
-        
-        vb:row {
-          spacing = CONTENT_SPACING,
-          
-          vb:text {
-            text = "Trigger Instrument",
-            width = 100
-          },
-          
-          vb:valuebox {
-            id = "trigger_instrument",
-            min = 1,
-            max = 255,
-            value = self.trigger_instrument,
-            width = 50,
-            notifier = function(value)
-              self.trigger_instrument = value
             end
           }
         },
