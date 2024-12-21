@@ -16,99 +16,102 @@ renoise.tool().preferences = options
 class 'GenQ'
 
 function GenQ:__init()
-  -- Initialize scale_map first with ALL scales in hex format (1-based)
-  self.scale_map = {
-    "01 major", "02 minor", "03 harmonic_minor", "04 melodic_minor",
-    "05 pentatonic", "06 minor_pentatonic", "07 dorian", "08 phrygian",
-    "09 lydian", "0A mixolydian", "0B locrian", "0C blues",
-    "0D whole_tone", "0E diminished", "0F augmented", "10 chromatic",
-    "11 hungarian_minor", "12 persian", "13 japanese", "14 arabic",
-    "15 bebop", "16 prometheus", "17 algerian", "18 byzantine",
-    "19 egyptian", "1A eight_tone", "1B enigmatic", "1C neapolitan",
-    "1D neapolitan_minor", "1E romanian_minor", "1F ukrainian_dorian", "20 yo",
-    "21 in_sen", "22 bhairav", "23 marva", "24 purvi",
-    "25 todi", "26 super_locrian", "27 double_harmonic", "28 hindu",
-    "29 kumoi", "2A iwato", "2B messiaen1", "2C messiaen2",
-    "2D messiaen3", "2E leading_whole_tone"
-  }
-
-  -- Update pattern types with hex numbers
-  self.pattern_types = {
-    "01 random",
-    "02 up",
-    "03 down", 
-    "04 random_walk",
-    "05 jazz_walk",
-    "06 modal_drift",
-    "07 tension_release",
-    "08 melodic_contour",
-    "09 phrase_based",
-    "0A markov",
-    "0B euclidean",
-    "0C melodic_sequence",
-    "0D melodic_development",
-    "0E melodic_phrase",
-    "0F rhythmic_phrase"
-  }
-
-  -- Then initialize scales
+  -- Unified scale definitions with metadata
   self.scales = {
-    major = {0, 2, 4, 5, 7, 9, 11},
-    minor = {0, 2, 3, 5, 7, 8, 10},
-    harmonic_minor = {0, 2, 3, 5, 7, 8, 11},
-    melodic_minor = {0, 2, 3, 5, 7, 9, 11},
-    pentatonic = {0, 2, 4, 7, 9},
-    minor_pentatonic = {0, 3, 5, 7, 10},
-    dorian = {0, 2, 3, 5, 7, 9, 10},
-    phrygian = {0, 1, 3, 5, 7, 8, 10},
-    lydian = {0, 2, 4, 6, 7, 9, 11},
-    mixolydian = {0, 2, 4, 5, 7, 9, 10},
-    locrian = {0, 1, 3, 5, 6, 8, 10},
-    blues = {0, 3, 5, 6, 7, 10},
-    whole_tone = {0, 2, 4, 6, 8, 10},
-    diminished = {0, 2, 3, 5, 6, 8, 9, 11},
-    augmented = {0, 3, 4, 7, 8, 11},
-    chromatic = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-    hungarian_minor = {0, 2, 3, 6, 7, 8, 11},
-    persian = {0, 1, 4, 5, 6, 8, 11},
-    japanese = {0, 2, 3, 7, 8},
-    arabic = {0, 2, 4, 5, 6, 8, 10},
-    bebop = {0, 2, 4, 5, 7, 9, 10, 11},
-    prometheus = {0, 2, 4, 6, 9, 10},
-    algerian = {0, 2, 3, 6, 7, 8, 11},
-    byzantine = {0, 1, 4, 5, 7, 8, 11},
-    egyptian = {0, 2, 5, 7, 10},
-    eight_tone = {0, 2, 3, 4, 6, 7, 9, 10},
-    enigmatic = {0, 1, 4, 6, 8, 10, 11},
-    neapolitan = {0, 1, 3, 5, 7, 9, 11},
-    neapolitan_minor = {0, 1, 3, 5, 7, 8, 11},
-    romanian_minor = {0, 2, 3, 6, 7, 9, 10},
-    ukrainian_dorian = {0, 2, 3, 6, 7, 9, 10},
-    yo = {0, 2, 5, 7, 9},
-    in_sen = {0, 1, 5, 7, 10},
-    bhairav = {0, 1, 4, 5, 7, 8, 11},
-    marva = {0, 1, 4, 6, 7, 9, 11},
-    purvi = {0, 1, 4, 6, 7, 8, 11},
-    todi = {0, 1, 3, 6, 7, 8, 11},
-    super_locrian = {0, 1, 3, 4, 6, 8, 10},
-    double_harmonic = {0, 1, 4, 5, 7, 8, 11},
-    hindu = {0, 2, 4, 5, 7, 8, 10},
-    kumoi = {0, 2, 3, 7, 9},
-    iwato = {0, 1, 5, 6, 10},
-    messiaen1 = {0, 2, 4, 6, 8, 10},
-    messiaen2 = {0, 1, 3, 4, 6, 7, 9, 10},
-    messiaen3 = {0, 2, 3, 4, 6, 7, 8, 10, 11},
-    leading_whole_tone = {0, 2, 4, 6, 8, 10, 11}
+    major = {id = 1, name = "major", intervals = {0, 2, 4, 5, 7, 9, 11}},
+    minor = {id = 2, name = "minor", intervals = {0, 2, 3, 5, 7, 8, 10}},
+    harmonic_minor = {id = 3, name = "harmonic_minor", intervals = {0, 2, 3, 5, 7, 8, 11}},
+    melodic_minor = {id = 4, name = "melodic_minor", intervals = {0, 2, 3, 5, 7, 9, 11}},
+    pentatonic = {id = 5, name = "pentatonic", intervals = {0, 2, 4, 7, 9}},
+    minor_pentatonic = {id = 6, name = "minor_pentatonic", intervals = {0, 3, 5, 7, 10}},
+    dorian = {id = 7, name = "dorian", intervals = {0, 2, 3, 5, 7, 9, 10}},
+    phrygian = {id = 8, name = "phrygian", intervals = {0, 1, 3, 5, 7, 8, 10}},
+    lydian = {id = 9, name = "lydian", intervals = {0, 2, 4, 6, 7, 9, 11}},
+    mixolydian = {id = 10, name = "mixolydian", intervals = {0, 2, 4, 5, 7, 9, 10}},
+    locrian = {id = 11, name = "locrian", intervals = {0, 1, 3, 5, 6, 8, 10}},
+    blues = {id = 12, name = "blues", intervals = {0, 3, 5, 6, 7, 10}},
+    whole_tone = {id = 13, name = "whole_tone", intervals = {0, 2, 4, 6, 8, 10}},
+    diminished = {id = 14, name = "diminished", intervals = {0, 2, 3, 5, 6, 8, 9, 11}},
+    augmented = {id = 15, name = "augmented", intervals = {0, 3, 4, 7, 8, 11}},
+    chromatic = {id = 16, name = "chromatic", intervals = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
+    hungarian_minor = {id = 17, name = "hungarian_minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
+    persian = {id = 18, name = "persian", intervals = {0, 1, 4, 5, 6, 8, 11}},
+    japanese = {id = 19, name = "japanese", intervals = {0, 2, 3, 7, 8}},
+    arabic = {id = 20, name = "arabic", intervals = {0, 2, 4, 5, 6, 8, 10}},
+    bebop = {id = 21, name = "bebop", intervals = {0, 2, 4, 5, 7, 9, 10, 11}},
+    prometheus = {id = 22, name = "prometheus", intervals = {0, 2, 4, 6, 9, 10}},
+    algerian = {id = 23, name = "algerian", intervals = {0, 2, 3, 6, 7, 8, 11}},
+    byzantine = {id = 24, name = "byzantine", intervals = {0, 1, 4, 5, 7, 8, 11}},
+    egyptian = {id = 25, name = "egyptian", intervals = {0, 2, 5, 7, 10}},
+    eight_tone = {id = 26, name = "eight_tone", intervals = {0, 2, 3, 4, 6, 7, 9, 10}},
+    enigmatic = {id = 27, name = "enigmatic", intervals = {0, 1, 4, 6, 8, 10, 11}},
+    neapolitan = {id = 28, name = "neapolitan", intervals = {0, 1, 3, 5, 7, 9, 11}},
+    neapolitan_minor = {id = 29, name = "neapolitan_minor", intervals = {0, 1, 3, 5, 7, 8, 11}},
+    romanian_minor = {id = 30, name = "romanian_minor", intervals = {0, 2, 3, 6, 7, 9, 10}},
+    ukrainian_dorian = {id = 31, name = "ukrainian_dorian", intervals = {0, 2, 3, 6, 7, 9, 10}},
+    yo = {id = 32, name = "yo", intervals = {0, 2, 5, 7, 9}},
+    in_sen = {id = 33, name = "in_sen", intervals = {0, 1, 5, 7, 10}},
+    bhairav = {id = 34, name = "bhairav", intervals = {0, 1, 4, 5, 7, 8, 11}},
+    marva = {id = 35, name = "marva", intervals = {0, 1, 4, 6, 7, 9, 11}},
+    purvi = {id = 36, name = "purvi", intervals = {0, 1, 4, 6, 7, 8, 11}},
+    todi = {id = 37, name = "todi", intervals = {0, 1, 3, 6, 7, 8, 11}},
+    super_locrian = {id = 38, name = "super_locrian", intervals = {0, 1, 3, 4, 6, 8, 10}},
+    double_harmonic = {id = 39, name = "double_harmonic", intervals = {0, 1, 4, 5, 7, 8, 11}},
+    hindu = {id = 40, name = "hindu", intervals = {0, 2, 4, 5, 7, 8, 10}},
+    kumoi = {id = 41, name = "kumoi", intervals = {0, 2, 3, 7, 9}},
+    iwato = {id = 42, name = "iwato", intervals = {0, 1, 5, 6, 10}},
+    messiaen1 = {id = 43, name = "messiaen1", intervals = {0, 2, 4, 6, 8, 10}},
+    messiaen2 = {id = 44, name = "messiaen2", intervals = {0, 1, 3, 4, 6, 7, 9, 10}},
+    messiaen3 = {id = 45, name = "messiaen3", intervals = {0, 2, 3, 4, 6, 7, 8, 10, 11}},
+    leading_whole_tone = {id = 46, name = "leading_whole_tone", intervals = {0, 2, 4, 6, 8, 10, 11}}
   }
+
+  -- Generate scale_map and id_to_scale_name lookup
+  self.scale_map = {}
+  self.id_to_scale_name = {}  -- New lookup table
+  for name, scale in pairs(self.scales) do
+    self.scale_map[scale.id] = string.format("%02X %s", scale.id, scale.name)
+    self.id_to_scale_name[scale.id] = name  -- Store reverse lookup
+  end
+
+  -- Helper function to get scale from volume
+  function GenQ:get_scale_from_volume(volume)
+    return self.id_to_scale_name[volume] or "major"  -- Direct lookup with fallback
+  end
+
+  -- Unified pattern types with metadata
+  self.patterns = {
+    random = {id = 1, name = "random"},
+    up = {id = 2, name = "up"},
+    down = {id = 3, name = "down"},
+    random_walk = {id = 4, name = "random_walk"},
+    jazz_walk = {id = 5, name = "jazz_walk"},
+    modal_drift = {id = 6, name = "modal_drift"},
+    tension_release = {id = 7, name = "tension_release"},
+    melodic_contour = {id = 8, name = "melodic_contour"},
+    phrase_based = {id = 9, name = "phrase_based"},
+    markov = {id = 10, name = "markov"},
+    euclidean = {id = 11, name = "euclidean"},
+    melodic_sequence = {id = 12, name = "melodic_sequence"},
+    melodic_development = {id = 13, name = "melodic_development"},
+    melodic_phrase = {id = 14, name = "melodic_phrase"},
+    rhythmic_phrase = {id = 15, name = "rhythmic_phrase"}
+  }
+
+  -- Generate pattern_types from patterns
+  self.pattern_types = {}
+  for _, pattern in pairs(self.patterns) do
+    self.pattern_types[pattern.id] = string.format("%02X %s", pattern.id, pattern.name)
+  end
 
   -- Initialize properties
   self.selected_scale = "major"
   self.selected_pattern = 1
   self.note_range = {40, 80}
-  self.trigger_instrument = 0  -- Hardcoded to instrument 0
+  self.trigger_instrument = 0
 
   -- Add menu entry directly to Tools menu
-  renoise.tool():add_menu_entry{name="Main Menu:Tools:GenQ Settings",invoke=function() self:show_gui() end}
+  renoise.tool():add_menu_entry{name="Main Menu:Tools:GenQ",invoke=function() self:show_gui() end}
 
   -- Real-time processing
   renoise.tool().app_idle_observable:add_notifier(function()
@@ -119,16 +122,11 @@ function GenQ:__init()
   self.prev_note = nil
   self.pattern_index = 1
   self.current_pattern = options.current_pattern.value
-
-  -- Add pattern memory
-  self.pattern_memory = {
-    last_patterns = {},    -- Store last N patterns
-    common_motifs = {},    -- Store recurring motifs
-    max_memory = 16       -- How many patterns to remember
-  }
-
-  -- Initialize current pattern type
   self.current_pattern_type = 1
+
+  -- Initialize state management
+  self.column_state = {}
+  self.last_pattern_key = nil
 end
 
 function GenQ:show_gui()
@@ -254,12 +252,19 @@ function genq_keyhandler_func(dialog, key)
   end
 end
 
+-- Helper function to get scale intervals
+function GenQ:get_scale_intervals(scale_name)
+  return self.scales[scale_name] and self.scales[scale_name].intervals or self.scales.major.intervals
+end
 
-function GenQ:get_scale_from_volume(volume)
-  local scale_entry = self.scale_map[volume]
-  if not scale_entry then return "major" end
-  local scale_name = scale_entry:match("%x%x%s+(.+)")
-  return scale_name or "major"  -- Ensure we always return a valid scale
+-- Helper function to get pattern from panning
+function GenQ:get_pattern_from_panning(panning)
+  for _, pattern in pairs(self.patterns) do
+    if pattern.id == panning then
+      return pattern.id
+    end
+  end
+  return 1  -- Default fallback
 end
 
 function GenQ:get_instrument_config(instrument_index)
@@ -283,28 +288,6 @@ function GenQ:get_instrument_config(instrument_index)
   return nil
 end
 
-function GenQ:get_pattern_from_panning(panning_value)
-  if not panning_value then 
-    print("No panning value provided")
-    return 1 
-  end
-  
-  -- Map panning value to pattern type number
-  -- Panning 01 -> "01 random"
-  -- Panning 0C -> "0C melodic_sequence" etc.
-  local pattern_index = panning_value
-  
-  -- Ensure we never return 0 and stay within valid pattern indices
-  if pattern_index < 1 then pattern_index = 1 end
-  pattern_index = math.min(pattern_index, #self.pattern_types)
-  
-  -- Add debug output to Renoise console
-  renoise.app():show_status(string.format("Panning %02X -> pattern: %s", 
-    panning_value, self.pattern_types[pattern_index]))
-  
-  return pattern_index
-end
-
 function GenQ:check_for_trigger()
   if not renoise.song() then return end
   if not renoise.song().transport.playing then return end
@@ -315,24 +298,36 @@ function GenQ:check_for_trigger()
   local current_pattern = song.patterns[pattern_index]
   
   -- Check current line and next line, handling pattern boundaries
-  local lines_to_check = {pos.line}
+  local patterns_to_check = {{pattern = current_pattern, line = pos.line}}
+  
   if pos.line < current_pattern.number_of_lines then
-    table.insert(lines_to_check, pos.line + 1)
+    -- Add next line in current pattern
+    table.insert(patterns_to_check, {pattern = current_pattern, line = pos.line + 1})
   elseif pos.sequence < #song.sequencer.pattern_sequence then
-    -- Check first line of next pattern
+    -- Add first line of next pattern
     local next_pattern_index = song.sequencer:pattern(pos.sequence + 1)
     local next_pattern = song.patterns[next_pattern_index]
     if next_pattern then
-      lines_to_check = {pos.line, 1}  -- Current line and first line of next pattern
+      table.insert(patterns_to_check, {pattern = next_pattern, line = 1})
+    end
+  else
+    -- At end of last pattern, check first line of first pattern (sequence loop)
+    local first_pattern_index = song.sequencer:pattern(1)
+    local first_pattern = song.patterns[first_pattern_index]
+    if first_pattern then
+      table.insert(patterns_to_check, {pattern = first_pattern, line = 1})
     end
   end
   
-  for _, check_line in ipairs(lines_to_check) do
+  for _, check_info in ipairs(patterns_to_check) do
+    local pattern_to_check = check_info.pattern
+    local line_to_check = check_info.line
+    
     for track_index = 1, #song.tracks do
       local track = song.tracks[track_index]
       if track.type == renoise.Track.TRACK_TYPE_SEQUENCER then 
-        local pattern_track = current_pattern:track(track_index)
-        local line = pattern_track:line(check_line)
+        local pattern_track = pattern_to_check:track(track_index)
+        local line = pattern_track:line(line_to_check)
 
         for column_index = 1, track.visible_note_columns do
           local note_column = line.note_columns[column_index]
@@ -364,11 +359,12 @@ function GenQ:check_for_trigger()
               end
             end
             
-            -- Process based on line position
-            if check_line == 1 then
-              self:process_pattern_immediately(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
+            -- Process based on line position and pattern
+            if pattern_to_check == current_pattern then
+              self:process_next_column(track_index, pattern_to_check, column_index, root_note, scale_name, pattern_type)
             else
-              self:process_next_column(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
+              -- For next pattern, process immediately to prepare the notes
+              self:process_pattern_immediately(track_index, pattern_to_check, column_index, root_note, scale_name, pattern_type)
             end
           end
         end
@@ -457,7 +453,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
         if note_column and note_column.note_value > 0 and note_column.note_value < 120 then
           local config = self:get_instrument_config(note_column.instrument_value + 1)
           if config then
-            local scale = self.scales[scale_name]
+            local scale = self:get_scale_intervals(scale_name)
             if not scale then
               renoise.app():show_status("Warning: Scale not found: " .. scale_name)
               return
@@ -479,7 +475,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               end
               
               local octave_shift = math.floor((line_index - 1) / #scale) * 12
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave + octave_shift, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave + octave_shift, config)
 
             elseif pattern_type == 3 then  -- "3 down" pattern
               if col_state.last_note == nil then
@@ -492,7 +488,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               end
               
               local octave_shift = -math.floor((line_index - 1) / #scale) * 12
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave + octave_shift, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave + octave_shift, config)
 
             elseif pattern_type == 4 then  -- "4 random_walk"
               if col_state.last_note == nil then
@@ -503,7 +499,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                 if col_state.last_note < 1 then col_state.last_note = #scale
                 elseif col_state.last_note > #scale then col_state.last_note = 1 end
               end
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 5 then  -- "5 jazz_walk"
               if col_state.last_note == nil then
@@ -532,7 +528,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                 while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
                 while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
               end
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 6 then  -- "6 modal_drift"
               local shift = math.floor(line_index / 4) % #scale
@@ -542,7 +538,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               if column_idx % 2 == 1 then
                 shifted_pos = ((shifted_pos + 2) % #scale) + 1
               end
-              new_note = self:quantize_to_scale(shifted_pos, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(shifted_pos, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 7 then  -- "7 tension_release"
               if col_state.last_note == nil then
@@ -607,7 +603,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                   col_state.base_octave = base_octave
                 end
               end
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, col_state.base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, col_state.base_octave, config)
 
             elseif pattern_type == 8 then  -- "8 melodic_contour"
               -- Initialize wave state if needed
@@ -638,7 +634,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               local mid_note = (config.note_range[1] + config.note_range[2]) / 2
               local mid_octave = math.floor(mid_note / 12) * 12
               
-              new_note = self:quantize_to_scale(pos, scale, root_note, mid_octave, config)
+              new_note = self:quantize_to_scale(pos, scale_name, root_note, mid_octave, config)
 
             elseif pattern_type == 9 then  -- "9 phrase_based"
               -- Different phrase lengths per column
@@ -665,7 +661,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
               while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
               
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 10 then  -- "0A markov"
               if line_index == 1 or col_state.last_pattern_type ~= pattern_type then
@@ -699,16 +695,16 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                   end
                 end
               end
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 11 then  -- "11 euclidean"
               local steps = #scale
               local pulses = math.ceil(steps * (0.4 + (column_idx % 2) * 0.1))
               local position = line_index % steps
               if (position * pulses) % steps < pulses then
-                new_note = self:quantize_to_scale(col_random(#scale), scale, root_note, base_octave, config)  -- Use col_random
+                new_note = self:quantize_to_scale(col_random(#scale), scale_name, root_note, base_octave, config)  -- Use col_random
               else
-                new_note = self:quantize_to_scale(col_state.last_note or 1, scale, root_note, base_octave, config)
+                new_note = self:quantize_to_scale(col_state.last_note or 1, scale_name, root_note, base_octave, config)
               end
 
             elseif pattern_type == 12 then  -- "12 melodic_sequence"
@@ -750,7 +746,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                 -- Use quantize_to_scale with bounded scale position
                 local scale_pos = base_degree + (transpose * #scale)
                 scale_pos = ((scale_pos - 1) % #scale) + 1  -- Ensure scale_pos stays within bounds
-                new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave + (transpose * 12), config)
+                new_note = self:quantize_to_scale(scale_pos, scale_name, root_note, base_octave + (transpose * 12), config)
                 
               elseif seq.type == 2 then  -- Tonal sequence
                 -- Move pattern up/down the scale
@@ -758,7 +754,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                 -- Wrap around scale
                 while scale_pos > #scale do scale_pos = scale_pos - #scale end
                 while scale_pos < 1 do scale_pos = scale_pos + #scale end
-                new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
+                new_note = self:quantize_to_scale(scale_pos, scale_name, root_note, base_octave, config)
                 
               else  -- Modified sequence
                 -- Preserve contour but adapt to scale
@@ -771,7 +767,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                   local interval = base_degree - prev_degree
                   scale_pos = scale_pos + (interval % math.min(3, #scale))
                 end
-                new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
+                new_note = self:quantize_to_scale(scale_pos, scale_name, root_note, base_octave, config)
               end
               
               -- Reset sequence after 4 repetitions or if we're running out of range
@@ -791,7 +787,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                 end
                 col_state.last_note = math.max(1, math.min(col_state.last_note + step, #scale))
               end
-              new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 14 then  -- "14 melodic_phrase"
               -- Generate scale-appropriate phrases
@@ -816,7 +812,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               local phrase_length = 4  -- Simplified to consistent length
               local phrase = phrases[math.floor(line_index / phrase_length) % #phrases + 1]
               local pos = phrase[line_index % #phrase + 1]
-              new_note = self:quantize_to_scale(pos, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(pos, scale_name, root_note, base_octave, config)
 
             elseif pattern_type == 15 then  -- "15 rhythmic_phrase"
               -- Different rhythms per column
@@ -833,9 +829,9 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
                   while col_state.last_note < 1 do col_state.last_note = col_state.last_note + #scale end
                   while col_state.last_note > #scale do col_state.last_note = col_state.last_note - #scale end
                 end
-                new_note = self:quantize_to_scale(col_state.last_note, scale, root_note, base_octave, config)
+                new_note = self:quantize_to_scale(col_state.last_note, scale_name, root_note, base_octave, config)
               else
-                new_note = self:quantize_to_scale(col_state.last_note or 1, scale, root_note, base_octave, config)
+                new_note = self:quantize_to_scale(col_state.last_note or 1, scale_name, root_note, base_octave, config)
               end
 
             else  -- "1 random" (default)
@@ -844,7 +840,7 @@ function GenQ:process_next_column(track_index, pattern, trigger_column_index, ro
               if column_idx % 2 == 1 then
                 scale_pos = ((scale_pos + 2) % #scale) + 1
               end
-              new_note = self:quantize_to_scale(scale_pos, scale, root_note, base_octave, config)
+              new_note = self:quantize_to_scale(scale_pos, scale_name, root_note, base_octave, config)
             end
             
             -- Keep within configured range
@@ -902,7 +898,9 @@ function GenQ:get_octave(note_min, note_max, col_random_func)
 end
 
 -- Add this helper function
-function GenQ:quantize_to_scale(note_index, scale, root_note, octave, config)
+function GenQ:quantize_to_scale(note_index, scale_name, root_note, octave, config)
+  local scale = self:get_scale_intervals(scale_name)
+  
   -- Ensure note_index is within scale bounds
   while note_index < 1 do note_index = note_index + #scale end
   while note_index > #scale do note_index = note_index - #scale end
