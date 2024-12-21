@@ -32,6 +32,22 @@ function GenQ:__init()
     "leading_whole_tone"
   }
 
+  -- Add pattern types
+  self.pattern_types = {
+    "random", "ascending", "descending", "pingpong",
+    "jazz_walk", 
+    "modal_drift",
+    "tension_release",
+    "melodic_contour",
+    "phrase_based",
+    "markov",
+    "euclidean",
+    "melodic_sequence",
+    "melodic_development",
+    "melodic_phrase",
+    "rhythmic_phrase"
+  }
+
   -- Then initialize scales and other properties
   self.scales = {
     major = {0, 2, 4, 5, 7, 9, 11},
@@ -308,6 +324,34 @@ function GenQ:get_scale_from_volume(volume)
   return self.scale_map[volume + 1]
 end
 
+function GenQ:get_instrument_config(instrument_index)
+  local song = renoise.song()
+  local instrument = song.instruments[instrument_index]
+  if not instrument then return nil end
+  
+  local name = instrument.name
+  if not name or not name:find("GENQ:") then return nil end
+  
+  local min, max = name:match("GENQ:(%d+):(%d+)")
+  local display_name = name:match("GENQ:%d+:%d+|(.+)") or ""
+    
+  if min and max then
+    return {
+      note_range = {tonumber(min), tonumber(max)},
+      display_name = display_name
+    }
+  end
+  
+  return nil
+end
+
+function GenQ:get_pattern_from_panning(panning_value)
+  -- Map panning (0-127) to pattern type (1-based index)
+  local pattern_count = #self.pattern_types
+  local index = math.floor((panning_value / 80) * pattern_count) + 1
+  return math.min(index, pattern_count)
+end
+
 function GenQ:check_for_trigger()
   if not renoise.song() then return end
   if not renoise.song().transport.playing then return end
@@ -317,7 +361,6 @@ function GenQ:check_for_trigger()
   local pattern_index = song.sequencer:pattern(pos.sequence)
   local current_pattern = song.patterns[pattern_index]
   
-  -- Special handling for first row - process current line instead of next
   local process_line = pos.line
   if pos.line > 1 then
     process_line = pos.line + 1
@@ -339,20 +382,18 @@ function GenQ:check_for_trigger()
           
           local root_note = note_column.note_value
           local scale_name = self:get_scale_from_volume(note_column.volume_value)
+          local pattern_type = self:get_pattern_from_panning(note_column.panning_value)
           
-          -- Process pattern immediately when on first row
-          if pos.line == 1 then
-            self:process_pattern_immediately(track_index, current_pattern, column_index, root_note, scale_name)
-          end
-          
-          -- Update GUI
+          -- Update GUI if visible
           if self.vb and self.dialog and self.dialog.visible then
             self.vb.views.scale_popup.value = table.find(self.scale_map, scale_name) or 1
+            self.vb.views.pattern_popup.value = pattern_type
           end
           
-          -- Process next column for other rows
-          if pos.line > 1 then
-            self:process_next_column(track_index, current_pattern, column_index, root_note, scale_name)
+          if pos.line == 1 then
+            self:process_pattern_immediately(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
+          else
+            self:process_next_column(track_index, current_pattern, column_index, root_note, scale_name, pattern_type)
           end
         end
       end
@@ -360,51 +401,46 @@ function GenQ:check_for_trigger()
   end
 end
 
-function GenQ:process_pattern_immediately(track_index, pattern, column_index, root_note, scale_name)
-  local scale = self.scales[scale_name]
-  local pattern_track = pattern:track(track_index)
+function GenQ:process_next_column(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
+  local song = renoise.song()
   
-  for line_index = 1, pattern.number_of_lines do
-    local process_line = pattern_track:line(line_index)
-    local next_column = process_line.note_columns[column_index + 1]
+  -- Process all tracks in the pattern
+  for track_idx = 1, #pattern.tracks do
+    local track = song.tracks[track_idx]
+    local pattern_track = pattern:track(track_idx)
     
-    if next_column and next_column.note_value > 0 and next_column.note_value < 120 then
-      local scale_note = self:generate_note(scale, root_note, line_index)
-      if not scale_note then
-        scale_note = scale[math.random(#scale)]
+    -- Process all note columns in this track
+    for column_idx = 1, track.visible_note_columns do
+      for line_index = 1, pattern.number_of_lines do
+        local line = pattern_track:line(line_index)
+        local note_column = line.note_columns[column_idx]
+        
+        if note_column and note_column.note_value > 0 and note_column.note_value < 120 then
+          -- Check if this note's instrument has GENQ config
+          local config = self:get_instrument_config(note_column.instrument_value + 1)
+          if config then
+            local scale = self.scales[scale_name]
+            local scale_note = self:generate_note(scale, root_note, line_index, pattern_type)
+            if not scale_note then
+              scale_note = scale[math.random(#scale)]
+            end
+            
+            local octave = self:get_octave(config.note_range[1], config.note_range[2])
+            local new_note = scale_note + octave + root_note
+            new_note = math.min(math.max(new_note, config.note_range[1]), config.note_range[2])
+            
+            note_column.note_value = new_note
+          end
+        end
       end
-      
-      local octave = self:get_octave(self.note_range[1], self.note_range[2])
-      local new_note = scale_note + octave + root_note
-      new_note = math.min(math.max(new_note, self.note_range[1]), self.note_range[2])
-      
-      next_column.note_value = new_note
     end
   end
 end
 
-function GenQ:process_next_column(track_index, pattern, column_index, root_note, scale_name)
-  local scale = self.scales[scale_name]
-  local pattern_track = pattern:track(track_index)
-  
-  -- Process all lines in the next column
-  for line_index = 1, pattern.number_of_lines do
-    local process_line = pattern_track:line(line_index)
-    local next_column = process_line.note_columns[column_index + 1]
-    
-    if next_column and next_column.note_value > 0 and next_column.note_value < 120 then
-      local scale_note = self:generate_note(scale, root_note, line_index)
-      if not scale_note then
-        scale_note = scale[math.random(#scale)]
-      end
-      
-      local octave = self:get_octave(self.note_range[1], self.note_range[2])
-      local new_note = scale_note + octave + root_note
-      new_note = math.min(math.max(new_note, self.note_range[1]), self.note_range[2])
-      
-      next_column.note_value = new_note
-    end
-  end
+-- Update process_pattern_immediately similarly
+function GenQ:process_pattern_immediately(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
+  -- Same code as process_next_column
+  self:process_next_column(track_index, pattern, trigger_column_index, root_note, scale_name, pattern_type)
 end
 
 -- Improved note generation with musical context
@@ -910,6 +946,22 @@ function GenQ:get_phrase_position(line_index)
     is_start = is_phrase_start,
     is_end = is_phrase_end
   }
+end
+
+function GenQ:save_instrument_config(instrument_index, min, max, display_name)
+  local song = renoise.song()
+  local instrument = song.instruments[instrument_index]
+  if not instrument then return end
+  
+  -- Format: GENQ:min:max|Display Name
+  local config = string.format(
+    "GENQ:%d:%d|%s",
+    min,
+    max,
+    display_name or ""
+  )
+  
+  instrument.name = config
 end
 
 -- Create a single instance of the tool
