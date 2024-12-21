@@ -107,11 +107,10 @@ function GenQ:__init()
   self.note_range = {40, 80}
   self.trigger_instrument = 0  -- Hardcoded to instrument 0
 
-  -- Add menu entries
-  renoise.tool():add_menu_entry{name="Main Menu:Tools:Random Note Generator:Process Pattern",invoke=function() self:process_pattern() end}
-  renoise.tool():add_menu_entry{name="Main Menu:Tools:Random Note Generator:Configure Settings",invoke=function() self:show_gui() end}
+  -- Add menu entry directly to Tools menu
+  renoise.tool():add_menu_entry{name="Main Menu:Tools:GenQ Settings",invoke=function() self:show_gui() end}
 
-  -- Remove the previous notifier code and replace with:
+  -- Real-time processing
   renoise.tool().app_idle_observable:add_notifier(function()
     self:check_for_trigger()
   end)
@@ -130,57 +129,6 @@ function GenQ:__init()
 
   -- Initialize current pattern type
   self.current_pattern_type = 1
-end
-
-function GenQ:process_pattern()
-  local song = renoise.song()
-  local pattern = song.selected_pattern
-  local track = song.selected_track
- 
-  -- Only process note tracks
-  if track.type ~= renoise.Track.TRACK_TYPE_SEQUENCER then 
-    return
-  end
-
-  -- First, check if we have a C-0 in any note column
-  for column_index = 1, track.visible_note_columns do
-    -- Process each line in the pattern
-    for line_index = 1, pattern.number_of_lines do
-      local line = pattern:track(song.selected_track_index):line(line_index)
-      local note_column = line.note_columns[column_index]
-      
-      -- If we find C-0, randomize all notes in the next column
-      if note_column and note_column.note_value == 0 then
-        if track.visible_note_columns < 2 then track.visible_note_columns = 2 end
-        -- Process all lines in the next column
-        for process_line = 1, pattern.number_of_lines do
-          local process_note = pattern:track(song.selected_track_index):line(process_line).note_columns[column_index + 1]
-          
-          -- Only process actual notes (not empty or OFF)
-          if process_note and process_note.note_value > 0 and process_note.note_value < 120 then
-            -- Generate random note in selected scale
-            local scale = self.scales[self.selected_scale]
-            local note_min, note_max = self.note_range[1], self.note_range[2]
-            
-            -- Get random scale degree and octave
-            local scale_note = scale[math.random(#scale)]
-            local octave = math.random(math.floor(note_min/12), math.floor(note_max/12)) * 12
-            local new_note = scale_note + octave
-            
-            -- Keep within range
-            new_note = math.min(math.max(new_note, note_min), note_max)
-            
-            -- Update the note
-            process_note.note_value = new_note
-          end
-        end
-        -- Break after finding C-0 as we've processed the next column
-        break
-      end
-    end
-  end
-  
-  renoise.app():show_status("Processed pattern with " .. self.selected_scale .. " scale")
 end
 
 function GenQ:show_gui()
@@ -282,31 +230,6 @@ function GenQ:show_gui()
                 song.selected_note_column.panning_value = panning
               end
               renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
-            end
-          }
-        },
-        
-        vb:row {
-          spacing = CONTENT_SPACING,
-          margin = CONTENT_MARGIN,
-          
-          vb:button {
-            text = "Process Pattern",
-            width = 100,
-            notifier = function()
-              local song = renoise.song()
-              local pattern = song.patterns[song.selected_pattern_index]
-              local track = song.selected_track_index
-              local column = song.selected_note_column_index or 1
-              
-              self:process_pattern_immediately(
-                track,
-                pattern,
-                column,
-                0,  -- root note
-                self.selected_scale,
-                self.selected_pattern
-              )
             end
           }
         }
@@ -417,7 +340,7 @@ function GenQ:check_for_trigger()
           if note_column and 
              note_column.note_value >= 0 and 
              note_column.note_value <= 11 and
-             note_column.instrument_value == self.trigger_instrument - 1 then
+             note_column.instrument_value == self.trigger_instrument then
             
             local root_note = note_column.note_value
             local scale_name = self:get_scale_from_volume(note_column.volume_value)
@@ -430,10 +353,14 @@ function GenQ:check_for_trigger()
             if self.vb and self.dialog and self.dialog.visible then
               if self.vb.views.scale_popup then
                 local scale_index = note_column.volume_value
-                self.vb.views.scale_popup.value = scale_index
+                if scale_index >= 1 and scale_index <= #self.scale_map then
+                  self.vb.views.scale_popup.value = scale_index
+                end
               end
               if self.vb.views.pattern_popup then
-                self.vb.views.pattern_popup.value = pattern_type
+                if pattern_type >= 1 and pattern_type <= #self.pattern_types then
+                  self.vb.views.pattern_popup.value = pattern_type
+                end
               end
             end
             
